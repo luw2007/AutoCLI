@@ -13,17 +13,14 @@ const EXTENSION_TIMEOUT: Duration = Duration::from_secs(30);
 const EXTENSION_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// High-level bridge that manages the Daemon process and provides IPage instances.
+/// The daemon runs as a detached background process with its own idle-shutdown lifecycle.
 pub struct BrowserBridge {
     port: u16,
-    daemon_process: Option<tokio::process::Child>,
 }
 
 impl BrowserBridge {
     pub fn new(port: u16) -> Self {
-        Self {
-            port,
-            daemon_process: None,
-        }
+        Self { port }
     }
 
     /// Create a bridge using the default port.
@@ -86,8 +83,11 @@ impl BrowserBridge {
             .spawn()
             .map_err(|e| CliError::browser_connect(format!("Failed to spawn daemon: {e}")))?;
 
-        info!(port = self.port, pid = ?child.id(), "daemon process spawned");
-        self.daemon_process = Some(child);
+        info!(port = self.port, pid = ?child.id(), "daemon process spawned (detached)");
+        // Detach: don't store the child handle so we don't kill it on drop.
+        // The daemon manages its own lifecycle (5-min idle shutdown).
+        // We need to forget the child to prevent tokio from killing it when dropped.
+        std::mem::forget(child);
         Ok(())
     }
 
@@ -186,24 +186,6 @@ impl BrowserBridge {
         )))
     }
 
-    /// Close the bridge and kill the daemon process if we spawned it.
-    pub async fn close(&mut self) -> Result<(), CliError> {
-        if let Some(ref mut child) = self.daemon_process {
-            debug!("killing daemon process");
-            let _ = child.kill().await;
-            self.daemon_process = None;
-        }
-        Ok(())
-    }
-}
-
-impl Drop for BrowserBridge {
-    fn drop(&mut self) {
-        // Best effort: try to kill the child process if still running.
-        if let Some(ref mut child) = self.daemon_process {
-            let _ = child.start_kill();
-        }
-    }
 }
 
 #[cfg(test)]
@@ -214,7 +196,6 @@ mod tests {
     fn test_bridge_construction() {
         let bridge = BrowserBridge::new(19825);
         assert_eq!(bridge.port, 19825);
-        assert!(bridge.daemon_process.is_none());
     }
 
     #[test]
