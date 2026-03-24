@@ -9,6 +9,8 @@ use crate::page::DaemonPage;
 const DEFAULT_PORT: u16 = 19825;
 const READY_TIMEOUT: Duration = Duration::from_secs(10);
 const READY_POLL_INTERVAL: Duration = Duration::from_millis(200);
+const EXTENSION_TIMEOUT: Duration = Duration::from_secs(15);
+const EXTENSION_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// High-level bridge that manages the Daemon process and provides IPage instances.
 pub struct BrowserBridge {
@@ -42,8 +44,8 @@ impl BrowserBridge {
             debug!(port = self.port, "daemon already running");
         }
 
-        // Check extension
-        if !client.is_extension_connected().await {
+        // Wait for extension to connect (it may need time to reconnect after daemon restart)
+        if !self.wait_for_extension(&client).await {
             warn!("Chrome extension is not connected to the daemon");
             return Err(CliError::BrowserConnect {
                 message: "Chrome extension not connected".into(),
@@ -79,6 +81,22 @@ impl BrowserBridge {
         info!(port = self.port, pid = ?child.id(), "daemon process spawned");
         self.daemon_process = Some(child);
         Ok(())
+    }
+
+    /// Wait for the Chrome extension to connect to the daemon.
+    async fn wait_for_extension(&self, client: &DaemonClient) -> bool {
+        let deadline = tokio::time::Instant::now() + EXTENSION_TIMEOUT;
+
+        while tokio::time::Instant::now() < deadline {
+            if client.is_extension_connected().await {
+                info!("Chrome extension connected");
+                return true;
+            }
+            debug!("Waiting for Chrome extension to connect...");
+            tokio::time::sleep(EXTENSION_POLL_INTERVAL).await;
+        }
+
+        false
     }
 
     /// Wait for the daemon to become ready by polling /health.
