@@ -2,6 +2,7 @@ site: bilibili
 name: hot
 description: B站热门视频
 domain: www.bilibili.com
+strategy: cookie
 
 args:
   limit:
@@ -10,8 +11,6 @@ args:
     description: Number of videos
 
 pipeline:
-  - navigate: https://www.bilibili.com
-
   - evaluate: |
       (async () => {
         const res = await fetch('https://api.bilibili.com/x/web-interface/popular?ps=${{ args.limit }}&pn=1', {

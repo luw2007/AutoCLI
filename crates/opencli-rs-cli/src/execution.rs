@@ -60,20 +60,77 @@ async fn execute_command_inner(
         let page = bridge.connect().await?;
 
         // Pre-navigate to domain if set
-        if let Some(domain) = &cmd.domain {
+        let pre_navigated_domain = if let Some(domain) = &cmd.domain {
             let url = format!("https://{}", domain);
             tracing::debug!(url = %url, "Pre-navigating to domain");
             page.goto(&url, None).await?;
-        }
+            Some(domain.clone())
+        } else {
+            None
+        };
+
+        // Optimize: skip first pipeline navigate step if it targets the same domain we pre-navigated to
+        let pipeline = cmd.pipeline.as_ref().map(|steps| {
+            skip_redundant_navigate(steps, pre_navigated_domain.as_deref())
+        });
 
         // Execute
-        let result = run_command(cmd, Some(page), &kwargs, &registry).await;
+        let result = if let Some(ref optimized_pipeline) = pipeline {
+            execute_pipeline(Some(page), optimized_pipeline, &kwargs, &registry).await
+        } else if cmd.func.is_some() {
+            run_command(cmd, Some(page), &kwargs, &registry).await
+        } else {
+            Err(CliError::command_execution(format!(
+                "Command '{}' has no pipeline or func",
+                cmd.full_name()
+            )))
+        };
 
         // Don't close bridge — let daemon manage lifecycle
         result
     } else {
         run_command(cmd, None, &kwargs, &registry).await
     }
+}
+
+/// If the first pipeline step is `navigate` to a URL whose domain matches `pre_navigated`,
+/// skip it since we already navigated there.
+fn skip_redundant_navigate(steps: &[Value], pre_navigated: Option<&str>) -> Vec<Value> {
+    let pre_domain = match pre_navigated {
+        Some(d) => d,
+        None => return steps.to_vec(),
+    };
+
+    if let Some(first) = steps.first() {
+        if let Some(obj) = first.as_object() {
+            if let Some(url_val) = obj.get("navigate") {
+                if let Some(url) = url_val.as_str() {
+                    // Extract domain from URL
+                    if let Some(domain) = extract_domain(url) {
+                        if domain == pre_domain || domain.ends_with(&format!(".{}", pre_domain)) {
+                            tracing::debug!(
+                                url = url,
+                                "Skipping redundant navigate (already pre-navigated to {})",
+                                pre_domain
+                            );
+                            return steps[1..].to_vec();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    steps.to_vec()
+}
+
+fn extract_domain(url: &str) -> Option<String> {
+    let without_scheme = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))?;
+    let domain = without_scheme.split('/').next()?;
+    let domain = domain.split(':').next()?; // remove port
+    Some(domain.to_string())
 }
 
 async fn run_command(
