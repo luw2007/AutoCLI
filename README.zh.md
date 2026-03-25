@@ -1,60 +1,58 @@
 # opencli-rs
-
 <div align="center">
 **[English](README.md) | [中文](README.zh.md) | [日本語](README.ja.md)**
 </div>
+极速、安全的命令行工具 —— **一行命令快速获取任意网站信息**。覆盖 Bilibili、知乎、小红书、Twitter/X、Reddit、YouTube、HackerNews 等 [55+ 站点](#内置命令)，同时支持控制 Electron 桌面应用、集成本地 CLI 工具（`gh`、`docker`、`kubectl`），通过浏览器会话复用和 AI 原生发现能力驱动。
 
-Blazing fast, memory-safe command-line tool — **Fetch information from any website with a single command**. Covers Twitter/X, Reddit, YouTube, HackerNews, Bilibili, Zhihu, Xiaohongshu,  and [55+ sites](#built-in-commands), with support for controlling Electron desktop apps, integrating local CLI tools (`gh`, `docker`, `kubectl`), powered by browser session reuse and AI-native discovery capabilities.
 
+基于 [OpenCLI](https://github.com/jackwener/opencli)（TypeScript）用 **纯 Rust 完整重写**。功能对等，**最高快 12 倍**，**内存省 10 倍**，**单文件 4.7MB**，零运行时依赖。
 
-A **complete rewrite in pure Rust** based on [OpenCLI](https://github.com/jackwener/opencli) (TypeScript). Feature-equivalent, **up to 12x faster**, **10x less memory**, **single 4.7MB binary**, zero runtime dependencies.
+**OpenClaw/Agent 的最佳搭档** —— 赋予你的 AI Agent 触达全网信息的能力，一行命令获取 55+ 站点的实时数据。
+**为 AI Agent 而生：** 在 `AGENT.md` 或 `.cursorrules` 中配置 `opencli-rs list`，AI 即可自动发现所有可用工具。注册你的本地 CLI（`opencli-rs register mycli`），AI 就能完美调用你的所有工具。
 
-**The perfect companion for OpenClaw/Agent** — Give your AI Agent the ability to reach information across the entire web, fetching real-time data from 55+ sites with a single command.
-**Built for AI Agents:** Configure `opencli-rs list` in `AGENT.md` or `.cursorrules`, and AI can automatically discover all available tools. Register your local CLI (`opencli-rs register mycli`), and AI can seamlessly invoke all your tools.
+**CLI 化一切桌面应用！** 将任何 Electron 应用变成命令行工具 —— Cursor、ChatGPT、Notion、Discord 等。重组、脚本化、扩展桌面应用，AI 可以原生控制自身，无限可能。
 
-**CLI-fy All Desktop Apps!** Turn any Electron app into a command-line tool — Cursor, ChatGPT, Notion, Discord, and more. Reorganize, script, and extend desktop apps; AI can natively control itself — endless possibilities.
+## 🚀 性能对比
 
-## 🚀 Performance Comparison
-
-| Metric | 🦀 opencli-rs (Rust) | 📦 opencli (Node.js) | Improvement |
+| 指标 | 🦀 opencli-rs (Rust) | 📦 opencli (Node.js) | 提升 |
 |------|:-----------------:|:-----------------:|:----:|
-| 💾 **Memory Usage (Public Commands)** | 15 MB | 99 MB | **6.6x** |
-| 💾 **Memory Usage (Browser Commands)** | 9 MB | 95 MB | **10.6x** |
-| 📏 **Binary Size** | 4.7 MB | ~50 MB (node_modules) | **10x** |
-| 🔗 **Runtime Dependencies** | None | Node.js 20+ | **Zero deps** |
-| ✅ **Test Pass Rate** | 103/122 (84%) | 104/122 (85%) | Near parity |
+| 💾 **内存占用 (Public 命令)** | 15 MB | 99 MB | **6.6x** |
+| 💾 **内存占用 (Browser 命令)** | 9 MB | 95 MB | **10.6x** |
+| 📏 **二进制大小** | 4.7 MB | ~50 MB (node_modules) | **10x** |
+| 🔗 **运行时依赖** | 无 | Node.js 20+ | **零依赖** |
+| ✅ **测试通过率** | 103/122 (84%) | 104/122 (85%) | 接近对等 |
 
-**⚡ Real-world Command Timing Comparison:**
+**⚡ 实测命令耗时对比：**
 
-| Command | 🦀 opencli-rs | 📦 opencli | Speedup |
+| 命令 | 🦀 opencli-rs | 📦 opencli | 加速比 |
 |------|:----------:|:-------:|:------:|
 | `bilibili hot` | **1.66s** | 20.1s | 🔥 **12x** |
 | `zhihu hot` | **1.77s** | 20.5s | 🔥 **11.6x** |
 | `xueqiu search 茅台` | **1.82s** | 9.2s | ⚡ **5x** |
 | `xiaohongshu search` | **5.1s** | 14s | ⚡ **2.7x** |
 
-> Based on automated testing of 122 commands (55 sites), macOS Apple Silicon environment.
+> 基于 122 个命令的自动化测试（55 个站点），macOS Apple Silicon 环境。
 
-## Features
+## 特性
 
-- **55 sites, 333 commands** — Covers Bilibili, Twitter, Reddit, Zhihu, Xiaohongshu, YouTube, Hacker News, and more
-- **Browser session reuse** — Reuse logged-in sessions via Chrome extension, no need to manage tokens
-- **Declarative YAML Pipeline** — Describe data scraping workflows in YAML, add new adapters with zero code
-- **AI-native discovery** — `explore` analyzes website APIs, `synthesize` auto-generates adapters, `cascade` probes authentication strategies
-- **External CLI passthrough** — Integrate GitHub CLI, Docker, Kubernetes, and other tools
-- **Multi-format output** — table, JSON, YAML, CSV, Markdown
-- **Single binary** — Compiles to a 4MB static binary with zero runtime dependencies
+- **55 个站点、333 个命令** —— 覆盖 Bilibili、Twitter、Reddit、知乎、小红书、YouTube、Hacker News 等
+- **浏览器会话复用** —— 通过 Chrome 扩展复用已登录状态，无需管理 token
+- **声明式 YAML Pipeline** —— 用 YAML 描述数据抓取流程，零代码新增适配器
+- **AI 原生发现** —— `explore` 分析网站 API、`synthesize` 自动生成适配器、`cascade` 探测认证策略
+- **外部 CLI 透传** —— 集成 GitHub CLI、Docker、Kubernetes 等工具
+- **多格式输出** —— table、JSON、YAML、CSV、Markdown
+- **单一二进制** —— 编译为 4MB 静态二进制，零运行时依赖
 
-## Installation
-> **Just one file, download and use.** No Node.js, Python, or any runtime needed — just put it in your PATH and go.
+## 安装
+> **只有一个文件，下载即可使用。** 无需 Node.js、Python 或任何运行时，放到 PATH 里就能跑。
 
-### One-line Install Script (macOS / Linux)
+### 一键安装脚本（macOS / Linux）
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nashsu/opencli-rs/main/scripts/install.sh | sh
 ```
 
-Automatically detects your system and architecture, downloads the corresponding binary, and installs to `/usr/local/bin/`.
+自动检测系统和架构，下载对应二进制，安装到 `/usr/local/bin/`。
 
 ### Windows (PowerShell)
 
@@ -65,11 +63,11 @@ Move-Item opencli-rs.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\"
 ```
 
 
-### Manual Download (Simplest)
+### 手动下载（最简单）
 
-Download the file for your platform from [GitHub Releases](https://github.com/nashsu/opencli-rs/releases/latest):
+从 [GitHub Releases](https://github.com/nashsu/opencli-rs/releases/latest) 下载对应平台的文件：
 
-| Platform | File |
+| 平台 | 文件 |
 |------|------|
 | macOS (Apple Silicon) | `opencli-rs-aarch64-apple-darwin.tar.gz` |
 | macOS (Intel) | `opencli-rs-x86_64-apple-darwin.tar.gz` |
@@ -77,9 +75,9 @@ Download the file for your platform from [GitHub Releases](https://github.com/na
 | Linux (ARM64) | `opencli-rs-aarch64-unknown-linux-musl.tar.gz` |
 | Windows (x64) | `opencli-rs-x86_64-pc-windows-msvc.zip` |
 
-After extracting, place `opencli-rs` (or `opencli-rs.exe` on Windows) in your system PATH.
+解压后将 `opencli-rs`（Windows 为 `opencli-rs.exe`）放到系统 PATH 中即可。
 
-### Build from Source
+### 从源码编译
 
 ```bash
 git clone https://github.com/nashsu/opencli-rs.git
@@ -88,51 +86,51 @@ cargo build --release
 cp target/release/opencli-rs /usr/local/bin/   # macOS / Linux
 ```
 
-### Update
+### 更新
 
-Simply re-run the install command or download the latest release to overwrite the existing binary.
+重新运行安装命令或下载最新版本覆盖即可。
 
-### Requirements
+### 环境要求
 
-- Chrome/Chromium + [OpenCLI Extension](https://github.com/jackwener/opencli) (required for browser commands)
-- Pure Public API commands (hackernews, devto, lobsters, etc.) do not require Chrome
+- Chrome/Chromium + [OpenCLI 扩展](https://github.com/jackwener/opencli)（浏览器命令需要）
+- 纯 Public API 命令（hackernews、devto、lobsters 等）无需 Chrome
 
-## Quick Start
+## 快速开始
 
 ```bash
-# View all available commands
+# 查看所有可用命令
 opencli-rs --help
 
-# View commands for a specific site
+# 查看某个站点的命令
 opencli-rs hackernews --help
 
-# Get Hacker News top stories (public API, no browser needed)
+# 获取 Hacker News 热门文章（公开 API，无需浏览器）
 opencli-rs hackernews top --limit 10
 
-# JSON format output
+# JSON 格式输出
 opencli-rs hackernews top --limit 5 --format json
 
-# Get Bilibili trending videos (requires browser + Cookie)
+# 获取 Bilibili 热门视频（需要浏览器 + Cookie）
 opencli-rs bilibili hot --limit 20
 
-# Search Twitter (requires browser + login)
+# 搜索 Twitter（需要浏览器 + 登录）
 opencli-rs twitter search "rust lang" --limit 10
 
-# Run diagnostics
+# 运行诊断
 opencli-rs doctor
 
-# Generate shell completions
+# 生成 Shell 补全
 opencli-rs completion bash >> ~/.bashrc
 opencli-rs completion zsh >> ~/.zshrc
 opencli-rs completion fish > ~/.config/fish/completions/opencli-rs.fish
 ```
 
 
-## Built-in Commands
+## 内置命令
 
-Run `opencli-rs --help` to see all available commands.
+运行 `opencli-rs --help` 查看所有可用命令。
 
-| Site | Commands | Mode |
+| 站点 | 命令 | 模式 |
 |------|------|------|
 | **hackernews** | `top` `new` `best` `ask` `show` `jobs` `search` `user` | Public |
 | **devto** | `top` `tag` `user` | Public |
@@ -190,71 +188,71 @@ Run `opencli-rs --help` to see all available commands.
 | **discord-app** | `status` `send` `read` `channels` `servers` `search` `members` | Desktop |
 | **antigravity** | `status` `send` `read` `new` `dump` `extract-code` `model` `watch` | Desktop |
 
-> **Mode legend:** Public = No browser needed, calls API directly; Browser = Requires Chrome + extension; Desktop = Requires the desktop app to be running
+> **模式说明：** Public = 无需浏览器，直接调 API；Browser = 需要 Chrome + 扩展；Desktop = 需要桌面应用运行
 
 
 
-## AI Discovery Capabilities
+## AI 发现能力
 
 ```bash
-# Explore website APIs
+# 探索网站 API
 opencli-rs explore https://example.com
 
-# Auto-detect authentication strategies
+# 自动探测认证策略
 opencli-rs cascade https://api.example.com/data
 
-# One-click adapter generation
+# 一键生成适配器
 opencli-rs generate https://example.com --goal "hot posts"
 ```
 
-## External CLI Integration
+## 外部 CLI 集成
 
-Integrated external tools (passthrough execution):
+已集成的外部工具（透传执行）：
 
-| Tool | Description |
+| 工具 | 说明 |
 |------|------|
 | `gh` | GitHub CLI |
 | `docker` | Docker CLI |
 | `kubectl` | Kubernetes CLI |
-| `obsidian` | Obsidian note management |
-| `readwise` | Readwise reading management |
+| `obsidian` | Obsidian 笔记管理 |
+| `readwise` | Readwise 阅读管理 |
 | `gws` | Google Workspace CLI |
 
 ```bash
-# Passthrough to GitHub CLI
+# 透传到 GitHub CLI
 opencli-rs gh repo list
 
-# Passthrough to kubectl
+# 透传到 kubectl
 opencli-rs kubectl get pods
 ```
 
-## Output Formats
+## 输出格式
 
-Switch output format via the `--format` global flag:
+通过 `--format` 全局参数切换输出格式：
 
 ```bash
-opencli-rs hackernews top --format table    # ASCII table (default)
+opencli-rs hackernews top --format table    # ASCII 表格（默认）
 opencli-rs hackernews top --format json     # JSON
 opencli-rs hackernews top --format yaml     # YAML
 opencli-rs hackernews top --format csv      # CSV
-opencli-rs hackernews top --format md       # Markdown table
+opencli-rs hackernews top --format md       # Markdown 表格
 ```
 
-## Authentication Strategies
+## 认证策略
 
-Each command uses a different authentication strategy:
+每个命令使用不同的认证策略：
 
-| Strategy | Description | Requires Browser |
+| 策略 | 说明 | 是否需要浏览器 |
 |------|------|--------------|
-| `public` | Public API, no authentication needed | No |
-| `cookie` | Requires browser Cookie | Yes |
-| `header` | Requires specific request headers | Yes |
-| `intercept` | Requires network request interception | Yes |
-| `ui` | Requires UI interaction | Yes |
+| `public` | 公开 API，无需认证 | 否 |
+| `cookie` | 需要浏览器 Cookie | 是 |
+| `header` | 需要特定请求头 | 是 |
+| `intercept` | 需要拦截网络请求 | 是 |
+| `ui` | 需要 UI 交互 | 是 |
 
-## Custom Adapters
+## 自定义适配器
 
-Add custom adapters by creating YAML files under `~/.opencli-rs/adapters/`:
+在 `~/.opencli-rs/adapters/` 下创建 YAML 文件即可添加自定义适配器：
 
 ```yaml
 # ~/.opencli-rs/adapters/mysite/hot.yaml
@@ -282,95 +280,94 @@ pipeline:
   - limit: "${{ args.limit }}"
 ```
 
-### Pipeline Steps
+### Pipeline 步骤
 
-| Step | Function | Example |
+| 步骤 | 功能 | 示例 |
 |------|------|------|
-| `fetch` | HTTP request | `fetch: https://api.example.com/data` |
-| `evaluate` | Execute JS in browser | `evaluate: "document.title"` |
-| `navigate` | Page navigation | `navigate: https://example.com` |
-| `click` | Click element | `click: "#button"` |
-| `type` | Type text | `type: { selector: "#input", text: "hello" }` |
-| `wait` | Wait | `wait: 2000` |
-| `select` | Select nested data | `select: data.items` |
-| `map` | Data mapping | `map: { title: "${{ item.title }}" }` |
-| `filter` | Data filtering | `filter: "item.score > 10"` |
-| `sort` | Sort | `sort: { by: score, order: desc }` |
-| `limit` | Truncate | `limit: "${{ args.limit }}"` |
-| `intercept` | Network interception | `intercept: { pattern: "*/api/*" }` |
-| `tap` | State management bridge | `tap: { action: "store.fetch", url: "*/api/*" }` |
-| `download` | Download | `download: { type: media }` |
+| `fetch` | HTTP 请求 | `fetch: https://api.example.com/data` |
+| `evaluate` | 浏览器中执行 JS | `evaluate: "document.title"` |
+| `navigate` | 页面导航 | `navigate: https://example.com` |
+| `click` | 点击元素 | `click: "#button"` |
+| `type` | 输入文本 | `type: { selector: "#input", text: "hello" }` |
+| `wait` | 等待 | `wait: 2000` |
+| `select` | 选取嵌套数据 | `select: data.items` |
+| `map` | 数据映射 | `map: { title: "${{ item.title }}" }` |
+| `filter` | 数据过滤 | `filter: "item.score > 10"` |
+| `sort` | 排序 | `sort: { by: score, order: desc }` |
+| `limit` | 截断 | `limit: "${{ args.limit }}"` |
+| `intercept` | 网络拦截 | `intercept: { pattern: "*/api/*" }` |
+| `tap` | 状态管理桥接 | `tap: { action: "store.fetch", url: "*/api/*" }` |
+| `download` | 下载 | `download: { type: media }` |
 
-### Template Expressions
+### 模板表达式
 
-Pipelines use the `${{ expression }}` syntax:
+Pipeline 中使用 `${{ expression }}` 语法：
 
 ```yaml
-# Variable access
+# 变量访问
 "${{ args.limit }}"
 "${{ item.title }}"
 "${{ index + 1 }}"
 
-# Comparison and logic
+# 比较和逻辑
 "${{ item.score > 10 }}"
 "${{ item.title && !item.deleted }}"
 
-# Ternary expressions
+# 三元表达式
 "${{ item.active ? 'yes' : 'no' }}"
 
-# Pipe filters
+# 管道过滤器
 "${{ item.title | truncate(30) }}"
 "${{ item.tags | join(', ') }}"
 "${{ item.name | lower | trim }}"
 
-# String interpolation
+# 字符串插值
 "https://api.com/${{ item.id }}.json"
 
 # Fallback
 "${{ item.subtitle || 'N/A' }}"
 
-# Math functions
+# 数学函数
 "${{ Math.min(args.limit, 50) }}"
 ```
 
-**Built-in filters (16):** `default`, `join`, `upper`, `lower`, `trim`, `truncate`, `replace`, `keys`, `length`, `first`, `last`, `json`, `slugify`, `sanitize`, `ext`, `basename`
+**内置过滤器（16 个）：** `default`, `join`, `upper`, `lower`, `trim`, `truncate`, `replace`, `keys`, `length`, `first`, `last`, `json`, `slugify`, `sanitize`, `ext`, `basename`
 
-## Configuration
+## 配置
 
-### Environment Variables
+### 环境变量
 
-| Variable | Default | Description |
+| 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `OPENCLI_VERBOSE` | - | Enable verbose output |
-| `OPENCLI_DAEMON_PORT` | `19825` | Daemon port |
-| `OPENCLI_CDP_ENDPOINT` | - | CDP direct endpoint (bypasses Daemon) |
-| `OPENCLI_BROWSER_COMMAND_TIMEOUT` | `60` | Command timeout (seconds) |
-| `OPENCLI_BROWSER_CONNECT_TIMEOUT` | `30` | Browser connection timeout (seconds) |
-| `OPENCLI_BROWSER_EXPLORE_TIMEOUT` | `120` | Explore timeout (seconds) |
+| `OPENCLI_VERBOSE` | - | 启用详细输出 |
+| `OPENCLI_DAEMON_PORT` | `19825` | Daemon 端口 |
+| `OPENCLI_CDP_ENDPOINT` | - | CDP 直连端点（跳过 Daemon） |
+| `OPENCLI_BROWSER_COMMAND_TIMEOUT` | `60` | 命令超时（秒） |
+| `OPENCLI_BROWSER_CONNECT_TIMEOUT` | `30` | 浏览器连接超时（秒） |
+| `OPENCLI_BROWSER_EXPLORE_TIMEOUT` | `120` | Explore 超时（秒） |
 
-### File Paths
+### 文件路径
 
-| Path | Description |
+| 路径 | 说明 |
 |------|------|
-| `~/.opencli-rs/adapters/` | User custom adapters |
-| `~/.opencli-rs/plugins/` | User plugins |
-| `~/.opencli-rs/external-clis.yaml` | User external CLI registry |
+| `~/.opencli-rs/adapters/` | 用户自定义适配器 |
+| `~/.opencli-rs/plugins/` | 用户插件 |
+| `~/.opencli-rs/external-clis.yaml` | 用户外部 CLI 注册表 |
 
-## Architecture
+## 架构
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                       User / AI Agent                           │
+│                         用户 / AI Agent                         │
 │                     opencli-rs <site> <command>                  │
 └─────────────────────┬───────────────────────────────────────────┘
                       │
                       ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                      CLI Layer (clap)                            │
-│  main.rs → discovery → clap dynamic subcommands → execution.rs  │
+│                      CLI 层 (clap)                               │
+│  main.rs → discovery → clap 动态子命令 → execution.rs            │
 │  ┌───────────┐  ┌───────────────┐  ┌──────────────────┐        │
-│  │ Built-in   │  │ Site adapter  │  │ External CLI     │        │
-│  │ commands   │  │ commands      │  │ passthrough      │        │
+│  │ 内置命令   │  │ 站点适配器命令 │  │ 外部 CLI 透传     │        │
 │  │ explore    │  │ bilibili hot  │  │ gh, docker, k8s  │        │
 │  │ doctor     │  │ twitter feed  │  │                  │        │
 │  └───────────┘  └───────┬───────┘  └──────────────────┘        │
@@ -378,8 +375,8 @@ Pipelines use the `${{ expression }}` syntax:
                           │
                           ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                   Execution Engine (execution.rs)                │
-│             Arg validation → Capability routing → Timeout ctrl  │
+│                     执行引擎 (execution.rs)                      │
+│               参数校验 → 能力路由 → 超时控制                      │
 │                    ┌─────────┼─────────┐                        │
 │                    ▼         ▼         ▼                        │
 │              YAML Pipeline  Rust Func  External CLI              │
@@ -387,7 +384,7 @@ Pipelines use the `${{ expression }}` syntax:
                  │
                  ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│  Pipeline Engine                    Browser Bridge                │
+│  Pipeline 引擎                        浏览器桥接                  │
 │  ┌────────────┐                      ┌─────────────────────┐    │
 │  │ fetch      │                      │ BrowserBridge       │    │
 │  │ evaluate   │  ──── IPage ────▶    │ DaemonClient (HTTP) │    │
@@ -398,69 +395,69 @@ Pipelines use the `${{ expression }}` syntax:
 │  │ tap        │                        HTTP + WebSocket          │
 │  └────────────┘                                 │               │
 │                                                 ▼               │
-│  Expression Engine (pest)            Chrome Extension (CDP)      │
-│  ${{ expr | filter }}                chrome.debugger API         │
+│  表达式引擎 (pest)                    Chrome 扩展 (CDP)          │
+│  ${{ expr | filter }}                 chrome.debugger API        │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-### Workspace Structure
+### Workspace 结构
 
 ```
 opencli-rs/
 ├── crates/
-│   ├── opencli-rs-core/        # Core data models: Strategy, CliCommand, Registry, IPage trait, Error
-│   ├── opencli-rs-pipeline/    # Pipeline engine: pest expressions, executor, 14 step types
-│   ├── opencli-rs-browser/     # Browser bridge: Daemon, DaemonPage, CdpPage, DOM helpers
-│   ├── opencli-rs-output/      # Output rendering: table, json, yaml, csv, markdown
-│   ├── opencli-rs-discovery/   # Adapter discovery: YAML parsing, build.rs compile-time embedding
-│   ├── opencli-rs-external/    # External CLI: loading, detection, passthrough execution
-│   ├── opencli-rs-ai/          # AI capabilities: explore, synthesize, cascade, generate
-│   └── opencli-rs-cli/         # CLI entry point: clap, execution orchestration, doctor, completion
-├── adapters/                   # 333 YAML adapter definitions
+│   ├── opencli-rs-core/        # 核心数据模型：Strategy, CliCommand, Registry, IPage trait, Error
+│   ├── opencli-rs-pipeline/    # Pipeline 引擎：pest 表达式, 执行器, 14 种步骤
+│   ├── opencli-rs-browser/     # 浏览器桥接：Daemon, DaemonPage, CdpPage, DOM helpers
+│   ├── opencli-rs-output/      # 输出渲染：table, json, yaml, csv, markdown
+│   ├── opencli-rs-discovery/   # 适配器发现：YAML 解析, build.rs 编译时嵌入
+│   ├── opencli-rs-external/    # 外部 CLI：加载, 检测, 透传执行
+│   ├── opencli-rs-ai/          # AI 能力：explore, synthesize, cascade, generate
+│   └── opencli-rs-cli/         # CLI 入口：clap, 执行编排, doctor, completion
+├── adapters/                   # 333 个 YAML 适配器定义
 │   ├── hackernews/
 │   ├── bilibili/
 │   ├── twitter/
-│   └── ...(55 sites)
+│   └── ...（55 个站点）
 └── resources/
-    └── external-clis.yaml      # External CLI registry
+    └── external-clis.yaml      # 外部 CLI 注册表
 ```
 
-### Improvements over the TypeScript Original
+### 相比 TypeScript 原版的改进
 
-| Improvement | Original (TypeScript) | opencli-rs (Rust) |
+| 改进项 | 原版 (TypeScript) | opencli-rs (Rust) |
 |--------|-------------------|-------------------|
-| Distribution | Node.js + npm install (~100MB) | Single binary (4.1MB) |
-| Startup speed | Read manifest JSON → parse → register | Compile-time embedding, zero file I/O |
-| Template engine | JS eval (security risk) | pest PEG parser (type-safe) |
-| Concurrent fetch | Non-browser mode pool=5 | FuturesUnordered, concurrency=10 |
-| Error system | Single hint string | Structured error chain + multiple suggestions |
-| HTTP connections | New fetch each time | reqwest connection pool reuse |
-| Memory safety | GC | Ownership system, zero GC pauses |
+| 分发方式 | Node.js + npm install (~100MB) | 单一二进制 (4.1MB) |
+| 启动速度 | 读 manifest JSON → 解析 → 注册 | 编译时嵌入，零文件 I/O |
+| 模板引擎 | JS eval (安全隐患) | pest PEG parser (类型安全) |
+| 并发 fetch | 非浏览器模式 pool=5 | FuturesUnordered, 并发度 10 |
+| 错误系统 | 单一 hint 字符串 | 结构化错误链 + 多条建议 |
+| HTTP 连接 | 每次 new fetch | reqwest 连接池复用 |
+| 内存安全 | GC | 所有权系统，零 GC 暂停 |
 
-## Development
+## 开发
 
 ```bash
-# Build
+# 构建
 cargo build
 
-# Test (166 tests)
+# 测试（166 个测试）
 cargo test --workspace
 
-# Release build (with LTO, ~4MB)
+# Release 构建（启用 LTO，约 4MB）
 cargo build --release
 
-# Add a new adapter
-# 1. Create a YAML file under adapters/<site>/
-# 2. Recompile (build.rs auto-embeds)
+# 添加新适配器
+# 1. 在 adapters/<site>/ 下创建 YAML 文件
+# 2. 重新编译（build.rs 自动嵌入）
 cargo build
 ```
 
-## Supported Sites
+## 支持的站点
 
 <details>
-<summary>Click to expand all 55 sites</summary>
+<summary>展开查看全部 55 个站点</summary>
 
-| Site | Commands | Strategy |
+| 站点 | 命令数 | 策略 |
 |------|--------|------|
 | hackernews | 8 | public |
 | bilibili | 12 | cookie |
@@ -490,7 +487,7 @@ cargo build
 | xueqiu | 7 | cookie |
 | boss | 14 | cookie |
 | jike | 10 | cookie |
-| Other 27 sites | ... | ... |
+| 其他 27 个站点 | ... | ... |
 
 </details>
 
@@ -504,6 +501,6 @@ cargo build
  </picture>
 </a>
 
-## License
+## 许可证
 
 Apache-2.0

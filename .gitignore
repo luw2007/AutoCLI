@@ -1,1 +1,4 @@
 /target
+/docs
+/opencli
+test-results*.md

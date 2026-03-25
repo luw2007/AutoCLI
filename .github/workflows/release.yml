@@ -79,9 +79,39 @@ jobs:
           name: opencli-rs-${{ matrix.target }}
           path: opencli-rs-${{ matrix.target }}.${{ matrix.archive }}
 
+  extension:
+    name: Build Chrome Extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: extension
+        run: npm ci
+
+      - name: Build extension
+        working-directory: extension
+        run: npm run build
+
+      - name: Package extension
+        run: |
+          cd extension
+          zip -r ../opencli-rs-chrome-extension.zip dist/ icons/ manifest.json
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencli-rs-chrome-extension
+          path: opencli-rs-chrome-extension.zip
+
   release:
     name: Create Release
-    needs: build
+    needs: [build, extension]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -108,4 +138,5 @@ jobs:
           files: |
             artifacts/opencli-rs-*.tar.gz
             artifacts/opencli-rs-*.zip
+            artifacts/opencli-rs-chrome-extension.zip
             artifacts/SHA256SUMS.txt

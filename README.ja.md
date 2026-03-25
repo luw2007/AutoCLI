@@ -1,60 +1,57 @@
 # opencli-rs
-
 <div align="center">
 **[English](README.md) | [中文](README.zh.md) | [日本語](README.ja.md)**
 </div>
+超高速・メモリ安全なコマンドラインツール —— **1コマンドであらゆるWebサイトの情報を即座に取得**。Twitter/X、Reddit、YouTube、HackerNews、Bilibili、知乎、小紅書、 など [55以上のサイト](#組み込みコマンド)をカバーし、Electron デスクトップアプリの制御やローカル CLI ツール（`gh`、`docker`、`kubectl`）の統合もサポート。ブラウザセッションの再利用と AI ネイティブディスカバリー機能により駆動されます。
 
-Blazing fast, memory-safe command-line tool — **Fetch information from any website with a single command**. Covers Twitter/X, Reddit, YouTube, HackerNews, Bilibili, Zhihu, Xiaohongshu,  and [55+ sites](#built-in-commands), with support for controlling Electron desktop apps, integrating local CLI tools (`gh`, `docker`, `kubectl`), powered by browser session reuse and AI-native discovery capabilities.
+[OpenCLI](https://github.com/jackwener/opencli)（TypeScript）を **純 Rust で完全リライト**。機能は同等で、**最大12倍高速**、**メモリ使用量1/10**、**単一ファイル 4.7MB**、ランタイム依存ゼロ。
 
+**OpenClaw/Agent の最良のパートナー** —— AI Agent にウェブ全体の情報にアクセスする能力を与え、1コマンドで55以上のサイトのリアルタイムデータを取得。
+**AI Agentのために設計：** `AGENT.md` や `.cursorrules` に `opencli-rs list` を設定すれば、AI が利用可能な全ツールを自動的に発見できます。ローカル CLI を登録（`opencli-rs register mycli`）すれば、AI があなたの全ツールを完璧に呼び出せます。
 
-A **complete rewrite in pure Rust** based on [OpenCLI](https://github.com/jackwener/opencli) (TypeScript). Feature-equivalent, **up to 12x faster**, **10x less memory**, **single 4.7MB binary**, zero runtime dependencies.
+**すべてのデスクトップアプリをCLI化！** あらゆる Electron アプリをコマンドラインツールに変換 —— Cursor、ChatGPT、Notion、Discord など。デスクトップアプリの再構成、スクリプト化、拡張が可能で、AI が自身をネイティブに制御でき、無限の可能性を秘めています。
 
-**The perfect companion for OpenClaw/Agent** — Give your AI Agent the ability to reach information across the entire web, fetching real-time data from 55+ sites with a single command.
-**Built for AI Agents:** Configure `opencli-rs list` in `AGENT.md` or `.cursorrules`, and AI can automatically discover all available tools. Register your local CLI (`opencli-rs register mycli`), and AI can seamlessly invoke all your tools.
+## 🚀 パフォーマンス比較
 
-**CLI-fy All Desktop Apps!** Turn any Electron app into a command-line tool — Cursor, ChatGPT, Notion, Discord, and more. Reorganize, script, and extend desktop apps; AI can natively control itself — endless possibilities.
-
-## 🚀 Performance Comparison
-
-| Metric | 🦀 opencli-rs (Rust) | 📦 opencli (Node.js) | Improvement |
+| 指標 | 🦀 opencli-rs (Rust) | 📦 opencli (Node.js) | 改善 |
 |------|:-----------------:|:-----------------:|:----:|
-| 💾 **Memory Usage (Public Commands)** | 15 MB | 99 MB | **6.6x** |
-| 💾 **Memory Usage (Browser Commands)** | 9 MB | 95 MB | **10.6x** |
-| 📏 **Binary Size** | 4.7 MB | ~50 MB (node_modules) | **10x** |
-| 🔗 **Runtime Dependencies** | None | Node.js 20+ | **Zero deps** |
-| ✅ **Test Pass Rate** | 103/122 (84%) | 104/122 (85%) | Near parity |
+| 💾 **メモリ使用量 (Public コマンド)** | 15 MB | 99 MB | **6.6x** |
+| 💾 **メモリ使用量 (Browser コマンド)** | 9 MB | 95 MB | **10.6x** |
+| 📏 **バイナリサイズ** | 4.7 MB | ~50 MB (node_modules) | **10x** |
+| 🔗 **ランタイム依存** | なし | Node.js 20+ | **ゼロ依存** |
+| ✅ **テスト通過率** | 103/122 (84%) | 104/122 (85%) | ほぼ同等 |
 
-**⚡ Real-world Command Timing Comparison:**
+**⚡ 実測コマンド所要時間比較：**
 
-| Command | 🦀 opencli-rs | 📦 opencli | Speedup |
+| コマンド | 🦀 opencli-rs | 📦 opencli | 高速化倍率 |
 |------|:----------:|:-------:|:------:|
 | `bilibili hot` | **1.66s** | 20.1s | 🔥 **12x** |
 | `zhihu hot` | **1.77s** | 20.5s | 🔥 **11.6x** |
 | `xueqiu search 茅台` | **1.82s** | 9.2s | ⚡ **5x** |
 | `xiaohongshu search` | **5.1s** | 14s | ⚡ **2.7x** |
 
-> Based on automated testing of 122 commands (55 sites), macOS Apple Silicon environment.
+> 122コマンド（55サイト）の自動テストに基づく。macOS Apple Silicon 環境。
 
-## Features
+## 機能
 
-- **55 sites, 333 commands** — Covers Bilibili, Twitter, Reddit, Zhihu, Xiaohongshu, YouTube, Hacker News, and more
-- **Browser session reuse** — Reuse logged-in sessions via Chrome extension, no need to manage tokens
-- **Declarative YAML Pipeline** — Describe data scraping workflows in YAML, add new adapters with zero code
-- **AI-native discovery** — `explore` analyzes website APIs, `synthesize` auto-generates adapters, `cascade` probes authentication strategies
-- **External CLI passthrough** — Integrate GitHub CLI, Docker, Kubernetes, and other tools
-- **Multi-format output** — table, JSON, YAML, CSV, Markdown
-- **Single binary** — Compiles to a 4MB static binary with zero runtime dependencies
+- **55サイト、333コマンド** —— Bilibili、Twitter、Reddit、知乎、小紅書、YouTube、Hacker News などをカバー
+- **ブラウザセッション再利用** —— Chrome 拡張機能でログイン済み状態を再利用、トークン管理不要
+- **宣言型 YAML Pipeline** —— YAML でデータ取得フローを記述、コードゼロで新しいアダプターを追加
+- **AI ネイティブディスカバリー** —— `explore` でサイト API を分析、`synthesize` でアダプターを自動生成、`cascade` で認証ストラテジーを探索
+- **外部 CLI パススルー** —— GitHub CLI、Docker、Kubernetes などのツールを統合
+- **複数出力フォーマット** —— table、JSON、YAML、CSV、Markdown
+- **単一バイナリ** —— 4MB の静的バイナリにコンパイル、ランタイム依存ゼロ
 
-## Installation
-> **Just one file, download and use.** No Node.js, Python, or any runtime needed — just put it in your PATH and go.
+## インストール
+> **ファイルは1つだけ、ダウンロードすればすぐ使えます。** Node.js、Python やその他のランタイムは不要、PATH に配置するだけで実行可能。
 
-### One-line Install Script (macOS / Linux)
+### ワンライナーインストールスクリプト（macOS / Linux）
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nashsu/opencli-rs/main/scripts/install.sh | sh
 ```
 
-Automatically detects your system and architecture, downloads the corresponding binary, and installs to `/usr/local/bin/`.
+システムとアーキテクチャを自動検出し、対応するバイナリをダウンロードして `/usr/local/bin/` にインストールします。
 
 ### Windows (PowerShell)
 
@@ -65,11 +62,11 @@ Move-Item opencli-rs.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\"
 ```
 
 
-### Manual Download (Simplest)
+### 手動ダウンロード（最も簡単）
 
-Download the file for your platform from [GitHub Releases](https://github.com/nashsu/opencli-rs/releases/latest):
+[GitHub Releases](https://github.com/nashsu/opencli-rs/releases/latest) から対応プラットフォームのファイルをダウンロード：
 
-| Platform | File |
+| プラットフォーム | ファイル |
 |------|------|
 | macOS (Apple Silicon) | `opencli-rs-aarch64-apple-darwin.tar.gz` |
 | macOS (Intel) | `opencli-rs-x86_64-apple-darwin.tar.gz` |
@@ -77,9 +74,9 @@ Download the file for your platform from [GitHub Releases](https://github.com/na
 | Linux (ARM64) | `opencli-rs-aarch64-unknown-linux-musl.tar.gz` |
 | Windows (x64) | `opencli-rs-x86_64-pc-windows-msvc.zip` |
 
-After extracting, place `opencli-rs` (or `opencli-rs.exe` on Windows) in your system PATH.
+解凍後、`opencli-rs`（Windows は `opencli-rs.exe`）をシステム PATH に配置してください。
 
-### Build from Source
+### ソースからビルド
 
 ```bash
 git clone https://github.com/nashsu/opencli-rs.git
@@ -88,51 +85,51 @@ cargo build --release
 cp target/release/opencli-rs /usr/local/bin/   # macOS / Linux
 ```
 
-### Update
+### アップデート
 
-Simply re-run the install command or download the latest release to overwrite the existing binary.
+インストールコマンドを再実行するか、最新バージョンをダウンロードして上書きしてください。
 
-### Requirements
+### 環境要件
 
-- Chrome/Chromium + [OpenCLI Extension](https://github.com/jackwener/opencli) (required for browser commands)
-- Pure Public API commands (hackernews, devto, lobsters, etc.) do not require Chrome
+- Chrome/Chromium + [OpenCLI 拡張機能](https://github.com/jackwener/opencli)（ブラウザコマンドに必要）
+- 純粋な Public API コマンド（hackernews、devto、lobsters など）は Chrome 不要
 
-## Quick Start
+## クイックスタート
 
 ```bash
-# View all available commands
+# 利用可能な全コマンドを表示
 opencli-rs --help
 
-# View commands for a specific site
+# 特定サイトのコマンドを表示
 opencli-rs hackernews --help
 
-# Get Hacker News top stories (public API, no browser needed)
+# Hacker News の人気記事を取得（公開 API、ブラウザ不要）
 opencli-rs hackernews top --limit 10
 
-# JSON format output
+# JSON 形式で出力
 opencli-rs hackernews top --limit 5 --format json
 
-# Get Bilibili trending videos (requires browser + Cookie)
+# Bilibili の人気動画を取得（ブラウザ + Cookie が必要）
 opencli-rs bilibili hot --limit 20
 
-# Search Twitter (requires browser + login)
+# Twitter を検索（ブラウザ + ログインが必要）
 opencli-rs twitter search "rust lang" --limit 10
 
-# Run diagnostics
+# 診断を実行
 opencli-rs doctor
 
-# Generate shell completions
+# シェル補完を生成
 opencli-rs completion bash >> ~/.bashrc
 opencli-rs completion zsh >> ~/.zshrc
 opencli-rs completion fish > ~/.config/fish/completions/opencli-rs.fish
 ```
 
 
-## Built-in Commands
+## 組み込みコマンド
 
-Run `opencli-rs --help` to see all available commands.
+`opencli-rs --help` を実行して利用可能な全コマンドを確認できます。
 
-| Site | Commands | Mode |
+| サイト | コマンド | モード |
 |------|------|------|
 | **hackernews** | `top` `new` `best` `ask` `show` `jobs` `search` `user` | Public |
 | **devto** | `top` `tag` `user` | Public |
@@ -190,71 +187,71 @@ Run `opencli-rs --help` to see all available commands.
 | **discord-app** | `status` `send` `read` `channels` `servers` `search` `members` | Desktop |
 | **antigravity** | `status` `send` `read` `new` `dump` `extract-code` `model` `watch` | Desktop |
 
-> **Mode legend:** Public = No browser needed, calls API directly; Browser = Requires Chrome + extension; Desktop = Requires the desktop app to be running
+> **モード説明：** Public = パブリック（ブラウザ不要）、直接 API を呼び出し；Browser = ブラウザ（Chrome + 拡張機能が必要）；Desktop = デスクトップ（アプリの起動が必要）
 
 
 
-## AI Discovery Capabilities
+## AI ディスカバリー機能
 
 ```bash
-# Explore website APIs
+# Web サイトの API を探索
 opencli-rs explore https://example.com
 
-# Auto-detect authentication strategies
+# 認証ストラテジーを自動探索
 opencli-rs cascade https://api.example.com/data
 
-# One-click adapter generation
+# ワンクリックでアダプターを生成
 opencli-rs generate https://example.com --goal "hot posts"
 ```
 
-## External CLI Integration
+## 外部 CLI 統合
 
-Integrated external tools (passthrough execution):
+統合済みの外部ツール（パススルー実行）：
 
-| Tool | Description |
+| ツール | 説明 |
 |------|------|
 | `gh` | GitHub CLI |
 | `docker` | Docker CLI |
 | `kubectl` | Kubernetes CLI |
-| `obsidian` | Obsidian note management |
-| `readwise` | Readwise reading management |
+| `obsidian` | Obsidian ノート管理 |
+| `readwise` | Readwise 読書管理 |
 | `gws` | Google Workspace CLI |
 
 ```bash
-# Passthrough to GitHub CLI
+# GitHub CLI にパススルー
 opencli-rs gh repo list
 
-# Passthrough to kubectl
+# kubectl にパススルー
 opencli-rs kubectl get pods
 ```
 
-## Output Formats
+## 出力フォーマット
 
-Switch output format via the `--format` global flag:
+`--format` グローバルパラメータで出力フォーマットを切り替え：
 
 ```bash
-opencli-rs hackernews top --format table    # ASCII table (default)
+opencli-rs hackernews top --format table    # ASCII テーブル（デフォルト）
 opencli-rs hackernews top --format json     # JSON
 opencli-rs hackernews top --format yaml     # YAML
 opencli-rs hackernews top --format csv      # CSV
-opencli-rs hackernews top --format md       # Markdown table
+opencli-rs hackernews top --format md       # Markdown テーブル
 ```
 
-## Authentication Strategies
+## 認証ストラテジー
 
-Each command uses a different authentication strategy:
+各コマンドは異なる認証ストラテジーを使用します：
 
-| Strategy | Description | Requires Browser |
+| ストラテジー | 説明 | ブラウザが必要か |
 |------|------|--------------|
-| `public` | Public API, no authentication needed | No |
-| `cookie` | Requires browser Cookie | Yes |
-| `header` | Requires specific request headers | Yes |
-| `intercept` | Requires network request interception | Yes |
-| `ui` | Requires UI interaction | Yes |
+| `public` | 公開 API、認証不要 | いいえ |
+| `cookie` | ブラウザ Cookie が必要 | はい |
+| `header` | 特定のリクエストヘッダーが必要 | はい |
+| `intercept` | ネットワークリクエストの傍受が必要 | はい |
+| `ui` | UI インタラクションが必要 | はい |
 
-## Custom Adapters
+## カスタムアダプター
 
-Add custom adapters by creating YAML files under `~/.opencli-rs/adapters/`:
+`~/.opencli-rs/adapters/` に YAML ファイルを作成するだけでカスタムアダプターを追加できます：
 
 ```yaml
 # ~/.opencli-rs/adapters/mysite/hot.yaml
@@ -282,95 +279,95 @@ pipeline:
   - limit: "${{ args.limit }}"
 ```
 
-### Pipeline Steps
+### Pipeline ステップ
 
-| Step | Function | Example |
+| ステップ | 機能 | 例 |
 |------|------|------|
-| `fetch` | HTTP request | `fetch: https://api.example.com/data` |
-| `evaluate` | Execute JS in browser | `evaluate: "document.title"` |
-| `navigate` | Page navigation | `navigate: https://example.com` |
-| `click` | Click element | `click: "#button"` |
-| `type` | Type text | `type: { selector: "#input", text: "hello" }` |
-| `wait` | Wait | `wait: 2000` |
-| `select` | Select nested data | `select: data.items` |
-| `map` | Data mapping | `map: { title: "${{ item.title }}" }` |
-| `filter` | Data filtering | `filter: "item.score > 10"` |
-| `sort` | Sort | `sort: { by: score, order: desc }` |
-| `limit` | Truncate | `limit: "${{ args.limit }}"` |
-| `intercept` | Network interception | `intercept: { pattern: "*/api/*" }` |
-| `tap` | State management bridge | `tap: { action: "store.fetch", url: "*/api/*" }` |
-| `download` | Download | `download: { type: media }` |
+| `fetch` | HTTP リクエスト | `fetch: https://api.example.com/data` |
+| `evaluate` | ブラウザ内で JS を実行 | `evaluate: "document.title"` |
+| `navigate` | ページナビゲーション | `navigate: https://example.com` |
+| `click` | 要素をクリック | `click: "#button"` |
+| `type` | テキスト入力 | `type: { selector: "#input", text: "hello" }` |
+| `wait` | 待機 | `wait: 2000` |
+| `select` | ネストデータを選択 | `select: data.items` |
+| `map` | データマッピング | `map: { title: "${{ item.title }}" }` |
+| `filter` | データフィルタリング | `filter: "item.score > 10"` |
+| `sort` | ソート | `sort: { by: score, order: desc }` |
+| `limit` | 切り詰め | `limit: "${{ args.limit }}"` |
+| `intercept` | ネットワーク傍受 | `intercept: { pattern: "*/api/*" }` |
+| `tap` | 状態管理ブリッジ | `tap: { action: "store.fetch", url: "*/api/*" }` |
+| `download` | ダウンロード | `download: { type: media }` |
 
-### Template Expressions
+### テンプレート式
 
-Pipelines use the `${{ expression }}` syntax:
+Pipeline では `${{ expression }}` 構文を使用します：
 
 ```yaml
-# Variable access
+# 変数アクセス
 "${{ args.limit }}"
 "${{ item.title }}"
 "${{ index + 1 }}"
 
-# Comparison and logic
+# 比較と論理演算
 "${{ item.score > 10 }}"
 "${{ item.title && !item.deleted }}"
 
-# Ternary expressions
+# 三項演算子
 "${{ item.active ? 'yes' : 'no' }}"
 
-# Pipe filters
+# パイプフィルター
 "${{ item.title | truncate(30) }}"
 "${{ item.tags | join(', ') }}"
 "${{ item.name | lower | trim }}"
 
-# String interpolation
+# 文字列補間
 "https://api.com/${{ item.id }}.json"
 
-# Fallback
+# フォールバック
 "${{ item.subtitle || 'N/A' }}"
 
-# Math functions
+# 数学関数
 "${{ Math.min(args.limit, 50) }}"
 ```
 
-**Built-in filters (16):** `default`, `join`, `upper`, `lower`, `trim`, `truncate`, `replace`, `keys`, `length`, `first`, `last`, `json`, `slugify`, `sanitize`, `ext`, `basename`
+**組み込みフィルター（16個）：** `default`, `join`, `upper`, `lower`, `trim`, `truncate`, `replace`, `keys`, `length`, `first`, `last`, `json`, `slugify`, `sanitize`, `ext`, `basename`
 
-## Configuration
+## 設定
 
-### Environment Variables
+### 環境変数
 
-| Variable | Default | Description |
+| 変数 | デフォルト値 | 説明 |
 |------|--------|------|
-| `OPENCLI_VERBOSE` | - | Enable verbose output |
-| `OPENCLI_DAEMON_PORT` | `19825` | Daemon port |
-| `OPENCLI_CDP_ENDPOINT` | - | CDP direct endpoint (bypasses Daemon) |
-| `OPENCLI_BROWSER_COMMAND_TIMEOUT` | `60` | Command timeout (seconds) |
-| `OPENCLI_BROWSER_CONNECT_TIMEOUT` | `30` | Browser connection timeout (seconds) |
-| `OPENCLI_BROWSER_EXPLORE_TIMEOUT` | `120` | Explore timeout (seconds) |
+| `OPENCLI_VERBOSE` | - | 詳細出力を有効化 |
+| `OPENCLI_DAEMON_PORT` | `19825` | Daemon ポート |
+| `OPENCLI_CDP_ENDPOINT` | - | CDP 直接接続エンドポイント（Daemon をスキップ） |
+| `OPENCLI_BROWSER_COMMAND_TIMEOUT` | `60` | コマンドタイムアウト（秒） |
+| `OPENCLI_BROWSER_CONNECT_TIMEOUT` | `30` | ブラウザ接続タイムアウト（秒） |
+| `OPENCLI_BROWSER_EXPLORE_TIMEOUT` | `120` | Explore タイムアウト（秒） |
 
-### File Paths
+### ファイルパス
 
-| Path | Description |
+| パス | 説明 |
 |------|------|
-| `~/.opencli-rs/adapters/` | User custom adapters |
-| `~/.opencli-rs/plugins/` | User plugins |
-| `~/.opencli-rs/external-clis.yaml` | User external CLI registry |
+| `~/.opencli-rs/adapters/` | ユーザーカスタムアダプター |
+| `~/.opencli-rs/plugins/` | ユーザープラグイン |
+| `~/.opencli-rs/external-clis.yaml` | ユーザー外部 CLI レジストリ |
 
-## Architecture
+## アーキテクチャ
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                       User / AI Agent                           │
+│                      ユーザー / AI Agent                         │
 │                     opencli-rs <site> <command>                  │
 └─────────────────────┬───────────────────────────────────────────┘
                       │
                       ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                      CLI Layer (clap)                            │
-│  main.rs → discovery → clap dynamic subcommands → execution.rs  │
+│                      CLI 層 (clap)                               │
+│  main.rs → discovery → clap 動的サブコマンド → execution.rs      │
 │  ┌───────────┐  ┌───────────────┐  ┌──────────────────┐        │
-│  │ Built-in   │  │ Site adapter  │  │ External CLI     │        │
-│  │ commands   │  │ commands      │  │ passthrough      │        │
+│  │ 組み込み   │  │ サイトアダプター│  │ 外部 CLI パススルー│        │
+│  │ コマンド   │  │ コマンド       │  │                  │        │
 │  │ explore    │  │ bilibili hot  │  │ gh, docker, k8s  │        │
 │  │ doctor     │  │ twitter feed  │  │                  │        │
 │  └───────────┘  └───────┬───────┘  └──────────────────┘        │
@@ -378,8 +375,8 @@ Pipelines use the `${{ expression }}` syntax:
                           │
                           ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                   Execution Engine (execution.rs)                │
-│             Arg validation → Capability routing → Timeout ctrl  │
+│                     実行エンジン (execution.rs)                   │
+│               パラメータ検証 → 機能ルーティング → タイムアウト制御  │
 │                    ┌─────────┼─────────┐                        │
 │                    ▼         ▼         ▼                        │
 │              YAML Pipeline  Rust Func  External CLI              │
@@ -387,7 +384,7 @@ Pipelines use the `${{ expression }}` syntax:
                  │
                  ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│  Pipeline Engine                    Browser Bridge                │
+│  Pipeline エンジン                      ブラウザブリッジ           │
 │  ┌────────────┐                      ┌─────────────────────┐    │
 │  │ fetch      │                      │ BrowserBridge       │    │
 │  │ evaluate   │  ──── IPage ────▶    │ DaemonClient (HTTP) │    │
@@ -398,69 +395,69 @@ Pipelines use the `${{ expression }}` syntax:
 │  │ tap        │                        HTTP + WebSocket          │
 │  └────────────┘                                 │               │
 │                                                 ▼               │
-│  Expression Engine (pest)            Chrome Extension (CDP)      │
-│  ${{ expr | filter }}                chrome.debugger API         │
+│  式エンジン (pest)                      Chrome 拡張機能 (CDP)     │
+│  ${{ expr | filter }}                 chrome.debugger API        │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-### Workspace Structure
+### Workspace 構造
 
 ```
 opencli-rs/
 ├── crates/
-│   ├── opencli-rs-core/        # Core data models: Strategy, CliCommand, Registry, IPage trait, Error
-│   ├── opencli-rs-pipeline/    # Pipeline engine: pest expressions, executor, 14 step types
-│   ├── opencli-rs-browser/     # Browser bridge: Daemon, DaemonPage, CdpPage, DOM helpers
-│   ├── opencli-rs-output/      # Output rendering: table, json, yaml, csv, markdown
-│   ├── opencli-rs-discovery/   # Adapter discovery: YAML parsing, build.rs compile-time embedding
-│   ├── opencli-rs-external/    # External CLI: loading, detection, passthrough execution
-│   ├── opencli-rs-ai/          # AI capabilities: explore, synthesize, cascade, generate
-│   └── opencli-rs-cli/         # CLI entry point: clap, execution orchestration, doctor, completion
-├── adapters/                   # 333 YAML adapter definitions
+│   ├── opencli-rs-core/        # コアデータモデル：Strategy, CliCommand, Registry, IPage trait, Error
+│   ├── opencli-rs-pipeline/    # Pipeline エンジン：pest 式, 実行器, 14種のステップ
+│   ├── opencli-rs-browser/     # ブラウザブリッジ：Daemon, DaemonPage, CdpPage, DOM ヘルパー
+│   ├── opencli-rs-output/      # 出力レンダリング：table, json, yaml, csv, markdown
+│   ├── opencli-rs-discovery/   # アダプター発見：YAML パース, build.rs コンパイル時埋め込み
+│   ├── opencli-rs-external/    # 外部 CLI：読み込み, 検出, パススルー実行
+│   ├── opencli-rs-ai/          # AI 機能：explore, synthesize, cascade, generate
+│   └── opencli-rs-cli/         # CLI エントリポイント：clap, 実行オーケストレーション, doctor, completion
+├── adapters/                   # 333個の YAML アダプター定義
 │   ├── hackernews/
 │   ├── bilibili/
 │   ├── twitter/
-│   └── ...(55 sites)
+│   └── ...（55サイト）
 └── resources/
-    └── external-clis.yaml      # External CLI registry
+    └── external-clis.yaml      # 外部 CLI レジストリ
 ```
 
-### Improvements over the TypeScript Original
+### TypeScript 版からの改善点
 
-| Improvement | Original (TypeScript) | opencli-rs (Rust) |
+| 改善項目 | 原版 (TypeScript) | opencli-rs (Rust) |
 |--------|-------------------|-------------------|
-| Distribution | Node.js + npm install (~100MB) | Single binary (4.1MB) |
-| Startup speed | Read manifest JSON → parse → register | Compile-time embedding, zero file I/O |
-| Template engine | JS eval (security risk) | pest PEG parser (type-safe) |
-| Concurrent fetch | Non-browser mode pool=5 | FuturesUnordered, concurrency=10 |
-| Error system | Single hint string | Structured error chain + multiple suggestions |
-| HTTP connections | New fetch each time | reqwest connection pool reuse |
-| Memory safety | GC | Ownership system, zero GC pauses |
+| 配布方式 | Node.js + npm install (~100MB) | 単一バイナリ (4.1MB) |
+| 起動速度 | manifest JSON 読み込み → パース → 登録 | コンパイル時埋め込み、ファイル I/O ゼロ |
+| テンプレートエンジン | JS eval (セキュリティリスク) | pest PEG parser (型安全) |
+| 並行 fetch | 非ブラウザモード pool=5 | FuturesUnordered, 並行度 10 |
+| エラーシステム | 単一 hint 文字列 | 構造化エラーチェーン + 複数の提案 |
+| HTTP 接続 | 毎回 new fetch | reqwest 接続プール再利用 |
+| メモリ安全性 | GC | 所有権システム、GC 停止ゼロ |
 
-## Development
+## 開発
 
 ```bash
-# Build
+# ビルド
 cargo build
 
-# Test (166 tests)
+# テスト（166テスト）
 cargo test --workspace
 
-# Release build (with LTO, ~4MB)
+# Release ビルド（LTO 有効、約 4MB）
 cargo build --release
 
-# Add a new adapter
-# 1. Create a YAML file under adapters/<site>/
-# 2. Recompile (build.rs auto-embeds)
+# 新しいアダプターを追加
+# 1. adapters/<site>/ に YAML ファイルを作成
+# 2. 再コンパイル（build.rs が自動で埋め込み）
 cargo build
 ```
 
-## Supported Sites
+## サポートサイト
 
 <details>
-<summary>Click to expand all 55 sites</summary>
+<summary>全55サイトを展開して表示</summary>
 
-| Site | Commands | Strategy |
+| サイト | コマンド数 | ストラテジー |
 |------|--------|------|
 | hackernews | 8 | public |
 | bilibili | 12 | cookie |
@@ -490,7 +487,7 @@ cargo build
 | xueqiu | 7 | cookie |
 | boss | 14 | cookie |
 | jike | 10 | cookie |
-| Other 27 sites | ... | ... |
+| その他27サイト | ... | ... |
 
 </details>
 
@@ -504,6 +501,6 @@ cargo build
  </picture>
 </a>
 
-## License
+## ライセンス
 
 Apache-2.0
