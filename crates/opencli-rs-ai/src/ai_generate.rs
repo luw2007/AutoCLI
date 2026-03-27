@@ -139,19 +139,14 @@ pub async fn generate_with_ai(
     eprintln!("🤖 Sending to AI for analysis...");
     let yaml = generate_with_llm(llm_config, &captured, goal, &site).await?;
 
-    // Step 4: Ensure site field matches detected site name (LLM may use localized names)
-    let yaml = if let Some(line) = yaml.lines().find(|l| l.starts_with("site:")) {
-        yaml.replacen(line, &format!("site: {}", site), 1)
-    } else {
-        yaml.clone()
-    };
+    // Step 4: Force site and name fields to match our detected values
+    let mut fixed_yaml = yaml.clone();
+    if let Some(line) = fixed_yaml.lines().find(|l| l.starts_with("site:")) {
+        fixed_yaml = fixed_yaml.replacen(line, &format!("site: {}", site), 1);
+    }
+    if let Some(line) = fixed_yaml.lines().find(|l| l.starts_with("name:")) {
+        fixed_yaml = fixed_yaml.replacen(line, &format!("name: {}", goal), 1);
+    }
 
-    // Step 5: Extract command name from YAML
-    let name = yaml.lines()
-        .find(|l| l.starts_with("name:"))
-        .and_then(|l| l.strip_prefix("name:"))
-        .map(|s| s.trim().trim_matches('"').to_string())
-        .unwrap_or_else(|| goal.to_string());
-
-    Ok((site, name, yaml))
+    Ok((site, goal.to_string(), fixed_yaml))
 }

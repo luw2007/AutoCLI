@@ -54,16 +54,78 @@ You will receive a JSON object with these fields:
 
 4. **Generate the YAML adapter** following the exact format below.
 
+## Goal Classification and Args Rules
+
+The user provides a **goal** (e.g. "hot", "search", "article"). You MUST first classify the goal into one of three categories, then decide args accordingly.
+
+### Category 1: List/Feed (no user args needed)
+
+Goals that fetch a pre-defined list — no user input required.
+
+Examples: `hot`, `trending`, `recommend`, `latest`, `top`, `feed`, `popular`, `weekly`, `daily`, `rank`, `frontpage`, `timeline`, `new`, `rising`, `best`, `featured`, `picks`, `digest`
+
+- NO required `args` (only optional `limit`)
+- Pipeline: navigate to the list page → fetch the list API → return array of items
+- Return format: array of flat objects with rank, title, author, metrics, url
+
+### Category 2: Search/Query (needs keyword/input arg)
+
+Goals that require user-provided input to query data.
+
+Examples: `search`, `query`, `lookup`, `find`, `filter`
+
+- MUST have a required positional arg (e.g. `keyword`, `query`)
+- May have optional args: `limit`, `sort`, `type`
+- Pipeline: navigate with query param → fetch search API → return results
+- Return format: array of flat objects with rank, title, author, metrics, url
+
+### Category 3: Content/Detail (needs identifier arg)
+
+Goals that fetch a single item's full content rather than a list. You need to reason about what the goal implies:
+
+Examples:
+- `article`, `post`, `detail`, `content` — fetch full text of a specific article/post, needs an `id` or `url` arg
+- `user`, `profile`, `author` — fetch a user's profile or their posts, needs a `username` or `uid` arg
+- `comment`, `comments`, `replies` — fetch comments on a specific item, needs an `id` arg
+- `topic`, `tag`, `category` — fetch items under a specific topic/tag, needs a `name` arg
+- `repo`, `project` — fetch details of a specific repository/project, needs a `name` arg
+- `video`, `episode` — fetch a specific video's info, needs an `id` or `url` arg
+
+Key differences from list goals:
+- MUST have a required positional arg (the identifier)
+- Return format depends on the content type:
+  - For single-item detail (article/post): return a single object or a small array with content fields (title, body, author, date, etc.)
+  - For sub-lists (user's posts, topic's articles): return an array like Category 1 but scoped to that entity
+
+### How to Classify Ambiguous Goals
+
+If the goal doesn't clearly fit a category, reason about it:
+
+1. **Does it imply "show me a list of popular/recent things"?** → Category 1 (no args)
+2. **Does it imply "find things matching my input"?** → Category 2 (keyword arg)
+3. **Does it imply "get details about a specific thing"?** → Category 3 (identifier arg)
+
+Examples of reasoning:
+- `hot-articles` → "hot" is a list → Category 1, no args
+- `user-posts` → "user" implies a specific user → Category 3, needs `username` arg
+- `search-videos` → "search" implies query → Category 2, needs `keyword` arg
+- `bookmarks` → personal list → Category 1, no args (uses cookie auth)
+- `followers` → could be self (Category 1) or specific user (Category 3) — check the API
+
+**The `name` field MUST exactly match the goal provided by the user.** Do not rename it.
+
 ## Output Format — YAML Adapter
 
 ```yaml
 site: {site_name}
-name: {command_name}
+name: {goal}
 description: {Chinese description of what this does}
 domain: {hostname}
 strategy: cookie
 browser: true
 
+# Only include args section if the goal requires user input!
+# For hot/trending/recommend/latest etc., omit args entirely or only keep optional limit.
 args:
   {arg_name}:
     type: str

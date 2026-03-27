@@ -26,9 +26,14 @@ pub async fn generate_with_llm(
 
     let user_message = format!(
         "Generate an opencli-rs YAML adapter for site \"{}\" with goal \"{}\".\n\n\
+        IMPORTANT:\n\
+        1. The `name` field MUST be exactly \"{}\".\n\
+        2. First classify the goal into: List/Feed (no args), Search/Query (keyword arg), or Content/Detail (identifier arg). \
+        See the \"Goal Classification and Args Rules\" in the system prompt.\n\
+        3. Only add required args when the goal genuinely needs user input.\n\n\
         Here is the captured data from the web page:\n\n```json\n{}\n```\n\n\
         Return ONLY the YAML content, no explanation, no markdown fencing. Just the raw YAML.",
-        site, goal,
+        site, goal, goal,
         serde_json::to_string_pretty(captured_data)
             .unwrap_or_else(|_| captured_data.to_string())
     );
@@ -105,13 +110,32 @@ pub async fn generate_with_llm(
         return Err(CliError::Http { message: "Unexpected LLM response format".into(), suggestions: vec![], source: None });
     };
 
-    // Clean up: remove markdown fencing if present
-    let yaml = content
+    // Clean up: remove thinking tags and markdown fencing
+    let mut cleaned = content.clone();
+    // Remove <think>...</think> and <thinking>...</thinking> blocks
+    while let Some(start) = cleaned.find("<think>") {
+        if let Some(end) = cleaned.find("</think>") {
+            cleaned = format!("{}{}", &cleaned[..start], &cleaned[end + 8..]);
+        } else {
+            cleaned = cleaned[..start].to_string();
+            break;
+        }
+    }
+    while let Some(start) = cleaned.find("<thinking>") {
+        if let Some(end) = cleaned.find("</thinking>") {
+            cleaned = format!("{}{}", &cleaned[..start], &cleaned[end + 11..]);
+        } else {
+            cleaned = cleaned[..start].to_string();
+            break;
+        }
+    }
+    // Remove markdown fencing if present
+    let yaml = cleaned
         .trim()
-        .strip_prefix("```yaml").or_else(|| content.trim().strip_prefix("```"))
-        .unwrap_or(content.trim())
+        .strip_prefix("```yaml").or_else(|| cleaned.trim().strip_prefix("```"))
+        .unwrap_or(cleaned.trim())
         .strip_suffix("```")
-        .unwrap_or(content.trim())
+        .unwrap_or(cleaned.trim())
         .trim()
         .to_string();
 
