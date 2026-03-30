@@ -6,6 +6,7 @@ pub mod generate;
 pub mod config;
 pub mod llm;
 pub mod ai_generate;
+pub mod url_pattern;
 
 pub use explore::explore;
 pub use synthesize::{synthesize, render_synthesize_summary, SynthesizeCandidateSummary, SynthesizeResult};
@@ -21,3 +22,4 @@ pub use types::{
 };
 pub use config::{load_config, save_config, config_path, Config, LlmConfig};
 pub use ai_generate::generate_with_ai;
+pub use url_pattern::url_to_pattern;
