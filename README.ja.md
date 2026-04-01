@@ -2,7 +2,17 @@
 
 **[English](README.md) | [中文](README.zh.md) | [日本語](README.ja.md)**
 
-超高速・メモリ安全なコマンドラインツール —— **1コマンドであらゆるWebサイトの情報を即座に取得**。Twitter/X、Reddit、YouTube、HackerNews、Bilibili、知乎、小紅書、 など [55以上のサイト](#組み込みコマンド)をカバーし、Electron デスクトップアプリの制御やローカル CLI ツール（`gh`、`docker`、`kubectl`）の統合もサポート。ブラウザセッションの再利用と AI ネイティブディスカバリー機能により駆動されます。
+<p align="center">
+  <img src="title_screen.png" alt="opencli-rs" width="800" />
+</p>
+
+<p align="center">
+  <a href="https://autocli.ai"><b>https://autocli.ai</b></a> — AI 駆動アダプターマーケットプレイス＆クラウド API
+</p>
+
+---
+
+超高速・メモリ安全なコマンドラインツール —— **1コマンドであらゆるWebサイトの情報を即座に取得**。Twitter/X、Reddit、YouTube、HackerNews、Bilibili、知乎、小紅書など [55以上のサイト](#組み込みコマンド)をカバーし、Electron デスクトップアプリの制御やローカル CLI ツール（`gh`、`docker`、`kubectl`）の統合もサポート。ブラウザセッションの再利用と AI ネイティブディスカバリー機能により駆動されます。
 
 [OpenCLI](https://github.com/jackwener/opencli)（TypeScript）を **純 Rust で完全リライト**。機能は同等で、**最大12倍高速**、**メモリ使用量1/10**、**単一ファイル 4.7MB**、ランタイム依存ゼロ。
 
@@ -38,6 +48,7 @@
 - **ブラウザセッション再利用** —— Chrome 拡張機能でログイン済み状態を再利用、トークン管理不要
 - **宣言型 YAML Pipeline** —— YAML でデータ取得フローを記述、コードゼロで新しいアダプターを追加
 - **AI ネイティブディスカバリー** —— `explore` でサイト API を分析、`generate` で1コマンドでアダプターを自動生成、`cascade` で認証ストラテジーを探索
+- **AI パワード生成** —— `generate --ai` で LLM がWebサイトを分析し、アダプターを自動生成。[autocli.ai](https://autocli.ai) でクラウド共有
 - **メディア＆記事ダウンロード** —— 動画ダウンロード（yt-dlp）、記事を Markdown にエクスポート＋画像のローカル保存
 - **外部 CLI パススルー** —— GitHub CLI、Docker、Kubernetes などのツールを統合
 - **複数出力フォーマット** —— table、JSON、YAML、CSV、Markdown
@@ -139,6 +150,61 @@ opencli-rs completion zsh >> ~/.zshrc
 opencli-rs completion fish > ~/.config/fish/completions/opencli-rs.fish
 ```
 
+## AI コマンド
+
+> **[autocli.ai](https://autocli.ai) によるサポート** — API トークンを取得し、コミュニティとアダプターを共有し、AI で任意のWebサイトのアダプターを生成。
+
+### ステップ 1：認証
+
+```bash
+opencli-rs auth
+```
+
+実行すると：
+1. ブラウザで [https://autocli.ai/get-token](https://autocli.ai/get-token) を自動的に開く
+2. トークンの入力を求める
+3. サーバーでトークンを検証
+4. `~/.opencli-rs/config.json` に保存
+
+### ステップ 2：AI でアダプターを生成
+
+```bash
+# AI がページを分析し、動作するアダプターを生成
+opencli-rs generate https://www.example.com --goal hot --ai
+
+# 商品検索
+opencli-rs generate https://www.amazon.com/s?k=rust --goal search --ai
+```
+
+**仕組み：**
+1. [autocli.ai](https://autocli.ai) で URL に一致する既存のアダプターを検索
+2. 見つかった場合、インタラクティブリストで選択：
+   ```
+   ? Existing adapters found, please select:
+   > [exact]   example hot (by alice) - トレンド投稿を取得
+     [domain]  example search (by bob) - 記事を検索
+     🔄 Regenerate (using AI)
+   ```
+3. 一致なし、または「Regenerate」を選択した場合、AI がページ（DOM 構造 + API リクエスト）を分析し、新しい YAML アダプターを生成
+4. 生成されたアダプターはローカルに保存され、[autocli.ai](https://autocli.ai) にアップロードしてコミュニティと共有
+
+### ステップ 3：既存アダプターを検索
+
+```bash
+# URL で検索
+opencli-rs search https://www.example.com
+
+# ドメイン名でもOK（自動的に https:// を補完）
+opencli-rs search example.com
+```
+
+[autocli.ai](https://autocli.ai) でコミュニティ共有アダプターを検索。インタラクティブリストから選択すると、自動的にダウンロードしてローカルに保存 — すぐに使用可能。
+
+### 環境変数
+
+| 変数 | 説明 | デフォルト |
+|------|------|-----------|
+| `AUTOCLI_API_BASE` | サーバー URL を上書き | `https://www.autocli.ai` |
 
 ## 組み込みコマンド
 
@@ -208,14 +274,15 @@ opencli-rs completion fish > ~/.config/fish/completions/opencli-rs.fish
 
 ## AI ディスカバリー機能
 
-1コマンドで API を発見し、アダプターを自動生成、即座に利用可能：
+アダプターを自動生成する2つの方法：
 
 ```bash
-# ワンショット：探索 + 合成 + アダプター保存
+# 🤖 AI 駆動（推奨）：LLM がページを分析しアダプターを生成
+opencli-rs generate https://www.example.com --goal hot --ai
+# autocli.ai で既存アダプターを先に検索し、見つからなければ AI で生成
+
+# 🔧 ルールベース：AI なしのヒューリスティック分析
 opencli-rs generate https://www.example.com --goal hot
-# ✅ アダプター生成: example hot
-#    保存先: ~/.opencli-rs/adapters/example/hot.yaml
-#    実行: opencli-rs example hot
 
 # Web サイトの API を探索（エンドポイント、フレームワーク、Store）
 opencli-rs explore https://www.example.com --site mysite

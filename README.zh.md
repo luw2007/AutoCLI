@@ -188,6 +188,18 @@ opencli-rs generate https://www.amazon.com/ --goal 'search' --ai
 3. 如果没有匹配或选择"重新生成"，AI 分析页面（DOM 结构 + API 请求）并生成新的 YAML 适配器
 4. 生成的适配器保存到本地，并上传到 [autocli.ai](https://autocli.ai) 与社区共享
 
+### 第三步：搜索已有适配器
+
+```bash
+# 通过 URL 搜索
+opencli-rs search https://www.example.com
+
+# 直接输入域名也可以（自动补全 https://）
+opencli-rs search example.com
+```
+
+从 [autocli.ai](https://autocli.ai) 搜索社区共享的适配器。从交互式列表中选择后，自动下载并保存到本地，即可使用。
+
 ### 环境变量
 
 | 变量 | 说明 | 默认值 |

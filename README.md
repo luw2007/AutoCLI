@@ -187,6 +187,18 @@ opencli-rs generate https://www.amazon.com/ --goal 'search' --ai
 3. If no match or you choose "Regenerate", AI analyzes the page (DOM structure + API requests) and generates a new YAML adapter
 4. The generated adapter is saved locally and uploaded to [autocli.ai](https://autocli.ai) for the community
 
+### Step 3: Search Existing Adapters
+
+```bash
+# Search by URL
+opencli-rs search https://www.example.com
+
+# Domain name also works (auto-prepends https://)
+opencli-rs search example.com
+```
+
+Searches [autocli.ai](https://autocli.ai) for community-shared adapters matching the URL. Select one from the interactive list to download and save it locally — ready to use immediately.
+
 ### Environment Variables
 
 | Variable | Description | Default |
