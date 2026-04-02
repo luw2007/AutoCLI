@@ -240,59 +240,75 @@ pipeline:
           target.element.click();
           await new Promise(function(r) { setTimeout(r, 500); });
 
-          if (inputText && target.hasInput) {
-            var inp = target.inputElement || target.element.querySelector('input[type="text"], textarea, [contenteditable="true"]');
+          if (inputText) {
+            var inp = target.element.querySelector('input[type="text"], textarea, [contenteditable="true"]');
+            if (!inp) {
+              inp = activeCard.querySelector('input[type="text"], textarea, [contenteditable="true"][class*="input"], [contenteditable="true"][class*="other"]');
+            }
+            if (!inp) {
+              for (var retryInp = 0; retryInp < 5; retryInp++) {
+                await new Promise(function(r) { setTimeout(r, 300); });
+                inp = target.element.querySelector('input[type="text"], textarea, [contenteditable="true"]');
+                if (!inp) inp = activeCard.querySelector('input[type="text"], textarea, [contenteditable="true"][class*="input"], [contenteditable="true"][class*="other"]');
+                if (inp) break;
+              }
+            }
             if (inp) {
               inp.focus();
+              await new Promise(function(r) { setTimeout(r, 200); });
               if (inp.tagName === 'INPUT' || inp.tagName === 'TEXTAREA') {
-                inp.value = inputText;
+                var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value') ||
+                                   Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value');
+                if (nativeSetter && nativeSetter.set) {
+                  nativeSetter.set.call(inp, inputText);
+                } else {
+                  inp.value = inputText;
+                }
                 inp.dispatchEvent(new Event('input', { bubbles: true }));
                 inp.dispatchEvent(new Event('change', { bubbles: true }));
               } else {
-                document.execCommand('selectAll', false, null);
+                var s = window.getSelection();
+                s.selectAllChildren(inp);
+                document.execCommand('delete', false, null);
                 document.execCommand('insertText', false, inputText);
               }
               await new Promise(function(r) { setTimeout(r, 300); });
             }
           }
 
-          if (!inputText) {
-            var submitBtn = activeCard.querySelector('[class*="submit"], [class*="confirm"], button[class*="primary"]');
-            if (!submitBtn) {
-              var footerArea = activeCard.querySelector('[class*="footer"], [class*="action"]');
-              var searchArea = footerArea || activeCard;
-              var allBtns = searchArea.querySelectorAll('button, [role="button"]');
-              for (var b = 0; b < allBtns.length; b++) {
-                var btnText = allBtns[b].textContent.trim();
-                if (btnText === '提交' || btnText === '确认' || btnText === 'Submit' || btnText === 'Confirm') {
-                  submitBtn = allBtns[b];
-                  break;
-                }
+          var submitBtn = activeCard.querySelector('[class*="submit"], [class*="confirm"], button[class*="primary"]');
+          if (!submitBtn) {
+            var footerArea = activeCard.querySelector('[class*="footer"], [class*="action"]');
+            var searchArea = footerArea || activeCard;
+            var allBtns = searchArea.querySelectorAll('button, [role="button"]');
+            for (var b = 0; b < allBtns.length; b++) {
+              var btnText = allBtns[b].textContent.trim();
+              if (btnText === '提交' || btnText === '确认' || btnText === 'Submit' || btnText === 'Confirm') {
+                submitBtn = allBtns[b];
+                break;
               }
             }
-            if (!submitBtn) {
-              var allBtns2 = activeCard.querySelectorAll('button, [role="button"]');
-              for (var b2 = 0; b2 < allBtns2.length; b2++) {
-                var btnText2 = allBtns2[b2].textContent.trim();
-                if (btnText2 === '下一个' || btnText2 === 'Next') {
-                  submitBtn = allBtns2[b2];
-                  break;
-                }
+          }
+          if (!submitBtn) {
+            var allBtns2 = activeCard.querySelectorAll('button, [role="button"]');
+            for (var b2 = 0; b2 < allBtns2.length; b2++) {
+              var btnText2 = allBtns2[b2].textContent.trim();
+              if (btnText2 === '下一个' || btnText2 === 'Next') {
+                submitBtn = allBtns2[b2];
+                break;
               }
             }
+          }
 
-            if (submitBtn) {
-              submitBtn.click();
-              await new Promise(function(r) { setTimeout(r, 500); });
-              results = [{ Index: String(selectId), Type: 'Submitted', Label: target.label, Description: inputText || '', Selected: '✓' }];
-            } else {
-              for (var r2 = 0; r2 < results.length; r2++) {
-                results[r2].Selected = (results[r2].Index === String(selectId)) ? '✓ (已选)' : '';
-              }
-              results.push({ Index: '-', Type: 'Warning', Label: '已选择选项但未找到提交按钮', Description: '', Selected: '' });
-            }
+          if (submitBtn) {
+            submitBtn.click();
+            await new Promise(function(r) { setTimeout(r, 500); });
+            results = [{ Index: String(selectId), Type: 'Submitted', Label: target.label, Description: inputText || '', Selected: '✓' }];
           } else {
-            results = [{ Index: String(selectId), Type: 'Selected', Label: target.label, Description: inputText, Selected: '✓ (需手动提交)' }];
+            for (var r2 = 0; r2 < results.length; r2++) {
+              results[r2].Selected = (results[r2].Index === String(selectId)) ? '✓ (已选)' : '';
+            }
+            results.push({ Index: '-', Type: 'Warning', Label: '已选择选项但未找到提交按钮', Description: '', Selected: '' });
           }
         }
 
