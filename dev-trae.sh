@@ -2,7 +2,12 @@
 
 set -euo pipefail
 
-OPENCLI_PATH="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT="$0"
+if [ -L "$SCRIPT" ]; then
+  SCRIPT="$(readlink "$SCRIPT")"
+  [[ "$SCRIPT" != /* ]] && SCRIPT="$(cd "$(dirname "$0")" && pwd)/$SCRIPT"
+fi
+OPENCLI_PATH="$(cd "$(dirname "$SCRIPT")" && pwd)"
 cd "${OPENCLI_PATH}"
 
 CDP_HOST="${OPENCLI_CDP_HOST:-localhost}"
