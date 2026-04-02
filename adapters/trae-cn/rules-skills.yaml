@@ -1,0 +1,50 @@
+site: trae-cn
+name: rules-skills
+description: 获取当前的规则和技能配置
+domain: localhost
+strategy: ui
+browser: true
+
+columns: [Type, Name, Status]
+
+pipeline:
+  - evaluate: |
+      (function() {
+        var results = [];
+
+        var ruleContainer = document.querySelector('[class*="rule-meta"], .icube-rule-meta-container');
+        if (ruleContainer) {
+          var isVisible = ruleContainer.offsetParent !== null;
+          results.push({
+            Type: '规则容器',
+            Name: 'rule-meta-container',
+            Status: isVisible ? '可见' : '隐藏'
+          });
+
+          var ruleItems = ruleContainer.querySelectorAll('[class*="rule-item"], [class*="rule"]');
+          ruleItems.forEach(function(item) {
+            var name = item.innerText.trim();
+            if (name && name.length < 100) {
+              results.push({ Type: '规则', Name: name.substring(0, 60), Status: '已加载' });
+            }
+          });
+        }
+
+        var agentEls = document.querySelectorAll('[class*="agent-avatar"], [class*="agent-name"]');
+        if (agentEls.length > 0) {
+          var heading = document.querySelector('.chat-turn-heading.assistant');
+          var agentName = heading ? heading.innerText.trim().split('\n')[0] : '未知';
+          results.push({ Type: '智能体', Name: agentName, Status: '活跃' });
+        }
+
+        var refContainers = document.querySelectorAll('[class*="icube-references"]');
+        if (refContainers.length > 0) {
+          results.push({ Type: '引用', Name: '引用容器', Status: refContainers.length + ' 个' });
+        }
+
+        if (results.length === 0) {
+          results.push({ Type: '状态', Name: '未检测到规则/技能配置', Status: '-' });
+        }
+
+        return results;
+      })()

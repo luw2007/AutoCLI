@@ -44,6 +44,7 @@ pub struct CliCommand {
     pub func: Option<AdapterFunc>,
     pub timeout_seconds: Option<u64>,
     pub navigate_before: NavigateBefore,
+    pub hidden: bool,
 }
 
 impl CliCommand {

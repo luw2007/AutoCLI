@@ -1,0 +1,246 @@
+site: trae-cn
+name: task-ask
+description: 检查指定任务是否处于问询状态，查看选项，支持选择并提交
+domain: localhost
+strategy: ui
+browser: true
+timeout_seconds: 30
+
+args:
+  index:
+    positional: true
+    type: int
+    default: 0
+    description: 任务索引（从 1 开始，0 表示当前选中的任务）
+  select:
+    long: select
+    type: int
+    default: 0
+    description: 选择指定选项编号（从 1 开始），有值时自动提交
+  text:
+    long: text
+    type: string
+    default: ""
+    description: 为选中的选项输入文本内容（配合 --select 使用）
+
+columns: [Index, Type, Label, Description, Selected]
+
+pipeline:
+  - evaluate: |
+      (async () => {
+        var taskIndex = ${{ args.index }} || 0;
+        var selectId = ${{ args.select }} || 0;
+        var inputText = ${{ args.text | json }} || "";
+
+        function cls(el) {
+          var c = el.className;
+          return (typeof c === 'string') ? c : (c && c.baseVal ? c.baseVal : '');
+        }
+
+        if (taskIndex > 0) {
+          var taskList = document.querySelector('[class*="task-items-list"]');
+          if (!taskList) return [{ Index: '-', Type: 'Error', Label: '未找到任务列表', Description: '', Selected: '' }];
+          var tasks = taskList.querySelectorAll(':scope > [class*="task-item"]');
+          if (taskIndex < 1 || taskIndex > tasks.length) {
+            return [{ Index: '-', Type: 'Error', Label: '任务索引超出范围 (1-' + tasks.length + ')', Description: '', Selected: '' }];
+          }
+          var task = tasks[taskIndex - 1];
+          if (cls(task).indexOf('selected') < 0) {
+            task.click();
+            await new Promise(function(r) { setTimeout(r, 1000); });
+          }
+        }
+
+        var container = document.querySelector('#mc-agent-content-container');
+        if (!container) return [{ Index: '-', Type: 'Error', Label: '未找到对话容器', Description: '', Selected: '' }];
+
+        var cards = container.querySelectorAll('[class*="ask-user-question-card-container"]');
+        if (cards.length === 0) return [{ Index: '-', Type: 'Info', Label: '当前任务没有问询', Description: '', Selected: '' }];
+
+        var activeCard = null;
+        for (var i = cards.length - 1; i >= 0; i--) {
+          if (cls(cards[i]).indexOf('status-completed') < 0) {
+            activeCard = cards[i];
+            break;
+          }
+        }
+
+        if (!activeCard) return [{ Index: '-', Type: 'Info', Label: '所有问询已完成', Description: '', Selected: '' }];
+
+        if (cls(activeCard).indexOf('collapsed') >= 0) {
+          activeCard.click();
+          await new Promise(function(r) { setTimeout(r, 500); });
+        }
+
+        var headerEl = activeCard.querySelector('[class*="ask-user-question-content-header"], [class*="question-header"], [class*="question-title"]');
+        if (!headerEl) {
+          var textEls = activeCard.querySelectorAll('div, span, p');
+          for (var t = 0; t < textEls.length; t++) {
+            var txt = textEls[t].textContent.trim();
+            if (txt.length > 10 && txt.indexOf('?') >= 0) { headerEl = textEls[t]; break; }
+          }
+        }
+        var questionText = headerEl ? headerEl.textContent.trim() : '';
+
+        var optionsSection = activeCard.querySelector('[class*="options-section"], [class*="options-container"]');
+        var results = [];
+
+        if (questionText) {
+          results.push({ Index: 'Q', Type: 'Question', Label: questionText.substring(0, 200), Description: '', Selected: '' });
+        }
+
+        if (!optionsSection) {
+          var allText = activeCard.textContent.trim();
+          if (!questionText && allText) {
+            results.push({ Index: 'Q', Type: 'Question', Label: allText.substring(0, 200), Description: '', Selected: '' });
+          }
+          if (results.length === 0) {
+            results.push({ Index: '-', Type: 'Info', Label: '问询中但未找到选项区域', Description: '', Selected: '' });
+          }
+          return results;
+        }
+
+        var optionItems = optionsSection.querySelectorAll('[class*="option-item"], [class*="option-card"]');
+        if (optionItems.length <= 1) {
+          var deeper = optionsSection.querySelectorAll('[class*="option"][class*="item"], [class*="option"][class*="card"]');
+          if (deeper.length > optionItems.length) optionItems = deeper;
+        }
+        if (optionItems.length <= 1) {
+          var byRole = optionsSection.querySelectorAll('[role="option"], [role="radio"], [role="listitem"]');
+          if (byRole.length > optionItems.length) optionItems = byRole;
+        }
+        if (optionItems.length <= 1) {
+          var wrapper = optionsSection.children.length === 1 ? optionsSection.children[0] : optionsSection;
+          optionItems = wrapper.children;
+        }
+
+        var optionsList = [];
+        for (var j = 0; j < optionItems.length; j++) {
+          var item = optionItems[j];
+          var itemCls = cls(item);
+
+          var labelEl = item.querySelector('[class*="option-label"], [class*="option-title"]');
+          var descEl = item.querySelector('[class*="option-desc"], [class*="option-detail"]');
+          var label = '';
+          if (labelEl) label = labelEl.textContent.trim();
+          if (!label) {
+            var textNodes = item.querySelectorAll('[class*="label"], [class*="title"], [class*="header"]');
+            for (var tn = 0; tn < textNodes.length; tn++) {
+              var tc = cls(textNodes[tn]);
+              if (tc.indexOf('radio') >= 0 || tc.indexOf('icon') >= 0 || tc.indexOf('svg') >= 0) continue;
+              var t = textNodes[tn].textContent.trim();
+              if (t.length > 0) { label = t; break; }
+            }
+          }
+          if (!label) label = item.textContent.trim();
+          if (label.length > 300) label = label.substring(0, 300);
+          var desc = descEl ? descEl.textContent.trim() : '';
+          if (!desc) {
+            var descNodes = item.querySelectorAll('[class*="description"], [class*="desc"], [class*="detail"]');
+            for (var dn = 0; dn < descNodes.length; dn++) {
+              var d = descNodes[dn].textContent.trim();
+              if (d.length > 0 && d !== label) { desc = d; break; }
+            }
+          }
+          if (desc && (label === desc || label.indexOf(desc) === 0)) desc = '';
+          if (desc && label.indexOf(desc) >= 0) {
+            label = label.replace(desc, '').trim();
+          }
+
+          var isChecked = itemCls.indexOf('selected') >= 0 ||
+                          itemCls.indexOf('checked') >= 0 ||
+                          itemCls.indexOf('active') >= 0;
+          var radio = item.querySelector('input[type="radio"], input[type="checkbox"]');
+          if (radio && radio.checked) isChecked = true;
+          var radioIcon = item.querySelector('[class*="radio"][class*="checked"], [class*="check"][class*="active"]');
+          if (radioIcon) isChecked = true;
+
+          var hasInput = item.querySelector('input[type="text"], textarea, [contenteditable="true"]');
+
+          optionsList.push({
+            index: j + 1,
+            label: label.substring(0, 300),
+            desc: desc.substring(0, 300),
+            checked: isChecked,
+            hasInput: !!hasInput,
+            element: item,
+            inputElement: hasInput
+          });
+
+          results.push({
+            Index: String(j + 1),
+            Type: hasInput ? 'Option+Input' : 'Option',
+            Label: label.substring(0, 300),
+            Description: desc.substring(0, 300),
+            Selected: isChecked ? '✓' : ''
+          });
+        }
+
+        if (selectId > 0 && selectId <= optionsList.length) {
+          var target = optionsList[selectId - 1];
+          var clickTarget = target.element.querySelector('input[type="radio"], input[type="checkbox"]')
+                         || target.element.querySelector('[class*="radio"], [class*="checkbox"]')
+                         || target.element;
+          clickTarget.click();
+          await new Promise(function(r) { setTimeout(r, 300); });
+          target.element.click();
+          await new Promise(function(r) { setTimeout(r, 500); });
+
+          if (inputText && target.hasInput) {
+            var inp = target.inputElement || target.element.querySelector('input[type="text"], textarea, [contenteditable="true"]');
+            if (inp) {
+              inp.focus();
+              if (inp.tagName === 'INPUT' || inp.tagName === 'TEXTAREA') {
+                inp.value = inputText;
+                inp.dispatchEvent(new Event('input', { bubbles: true }));
+                inp.dispatchEvent(new Event('change', { bubbles: true }));
+              } else {
+                document.execCommand('selectAll', false, null);
+                document.execCommand('insertText', false, inputText);
+              }
+              await new Promise(function(r) { setTimeout(r, 300); });
+            }
+          }
+
+          if (!inputText) {
+            var submitBtn = activeCard.querySelector('[class*="submit"], [class*="confirm"], button[class*="primary"]');
+            if (!submitBtn) {
+              var footerArea = activeCard.querySelector('[class*="footer"], [class*="action"]');
+              var searchArea = footerArea || activeCard;
+              var allBtns = searchArea.querySelectorAll('button, [role="button"]');
+              for (var b = 0; b < allBtns.length; b++) {
+                var btnText = allBtns[b].textContent.trim();
+                if (btnText === '提交' || btnText === '确认' || btnText === 'Submit' || btnText === 'Confirm') {
+                  submitBtn = allBtns[b];
+                  break;
+                }
+              }
+            }
+            if (!submitBtn) {
+              var allBtns2 = activeCard.querySelectorAll('button, [role="button"]');
+              for (var b2 = 0; b2 < allBtns2.length; b2++) {
+                var btnText2 = allBtns2[b2].textContent.trim();
+                if (btnText2 === '下一个' || btnText2 === 'Next') {
+                  submitBtn = allBtns2[b2];
+                  break;
+                }
+              }
+            }
+
+            if (submitBtn) {
+              submitBtn.click();
+              await new Promise(function(r) { setTimeout(r, 500); });
+              results = [{ Index: String(selectId), Type: 'Submitted', Label: target.label, Description: inputText || '', Selected: '✓' }];
+            } else {
+              for (var r2 = 0; r2 < results.length; r2++) {
+                results[r2].Selected = (results[r2].Index === String(selectId)) ? '✓ (已选)' : '';
+              }
+              results.push({ Index: '-', Type: 'Warning', Label: '已选择选项但未找到提交按钮', Description: '', Selected: '' });
+            }
+          } else {
+            results = [{ Index: String(selectId), Type: 'Selected', Label: target.label, Description: inputText, Selected: '✓ (需手动提交)' }];
+          }
+        }
+
+        return results;
+      })()

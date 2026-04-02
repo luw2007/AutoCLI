@@ -28,6 +28,19 @@ pub fn type_text_js(selector: &str, text: &str) -> String {
     )
 }
 
+/// Generate JS to focus an element by CSS selector.
+pub fn focus_js(selector: &str) -> String {
+    let escaped = selector.replace('\\', "\\\\").replace('\'', "\\'");
+    format!(
+        r#"(() => {{
+  const el = document.querySelector('{escaped}');
+  if (!el) throw new Error('Element not found: {escaped}');
+  el.focus();
+  return true;
+}})()"#
+    )
+}
+
 /// Generate JS to simulate a key press.
 pub fn press_key_js(key: &str) -> String {
     let k = key.replace('\\', "\\\\").replace('\'', "\\'");

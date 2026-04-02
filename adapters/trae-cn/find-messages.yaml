@@ -1,0 +1,46 @@
+site: trae-cn
+name: find-messages
+description: 查找 Trae 消息元素
+domain: localhost
+strategy: ui
+browser: true
+hidden: true
+
+columns: [Index, Selector, Role, Content]
+
+pipeline:
+  - evaluate: |
+      (function() {
+        const results = [];
+        
+        // 查找消息元素
+        const messageSelectors = [
+          '[data-message-role]',
+          '.message',
+          '[class*="message"]',
+          '[class*="chat-message"]',
+          '[class*="conversation"]'
+        ];
+        
+        messageSelectors.forEach(sel => {
+          const elements = document.querySelectorAll(sel);
+          elements.forEach((el, i) => {
+            const role = el.getAttribute('data-message-role') || 
+                        el.classList.contains('user') ? 'user' : 
+                        el.classList.contains('assistant') ? 'assistant' : 'unknown';
+            
+            results.push({
+              Index: i + 1,
+              Selector: sel,
+              Role: role,
+              Content: el.textContent.substring(0, 200)
+            });
+          });
+        });
+        
+        if (results.length === 0) {
+          return [{ Index: '-', Selector: '-', Role: '-', Content: 'No message elements found' }];
+        }
+        
+        return results.slice(0, 20);
+      })()

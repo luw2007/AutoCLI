@@ -1,0 +1,174 @@
+site: trae-cn
+name: task-view
+description: 选择任务并查看对话内容（结构化拆分）
+domain: localhost
+strategy: ui
+browser: true
+
+args:
+  index:
+    positional: true
+    type: int
+    default: 1
+    description: 任务索引（从 1 开始）
+
+columns: [Role, Type, Content]
+
+pipeline:
+  - evaluate: |
+      (async () => {
+        var index = ${{ args.index }} || 1;
+        var taskList = document.querySelector('[class*="task-items-list"]');
+        if (!taskList) {
+          return [{ Role: 'Error', Type: 'error', Content: '未找到任务列表' }];
+        }
+
+        var tasks = taskList.querySelectorAll(':scope > [class*="task-item"]');
+        if (tasks.length === 0) {
+          return [{ Role: 'Error', Type: 'error', Content: '暂无任务' }];
+        }
+        if (index < 1 || index > tasks.length) {
+          return [{ Role: 'Error', Type: 'error', Content: '任务索引超出范围 (1-' + tasks.length + ')' }];
+        }
+
+        var task = tasks[index - 1];
+        var titleEl = task.querySelector('[class*="task-title"]');
+        var taskTitle = titleEl ? titleEl.innerText.trim() : '未知';
+
+        function getSessionId(el) {
+          var fk = Object.keys(el).find(function(k) { return k.startsWith('__reactFiber$'); });
+          if (!fk) return '-';
+          var cur = el[fk];
+          for (var n = 0; n < 5 && cur; n++) {
+            var p = cur.memoizedProps || {};
+            if (p.session && p.session.sessionId) return p.session.sessionId;
+            cur = cur.return;
+          }
+          return '-';
+        }
+
+        var chatSessionId = getSessionId(task);
+        var isSelected = task.className.indexOf('selected') >= 0;
+
+        if (!isSelected) {
+          task.click();
+          await new Promise(function(r) { setTimeout(r, 1000); });
+        }
+
+        var container = document.querySelector('#mc-agent-content-container');
+        if (!container) {
+          return [{ Role: 'Error', Type: 'error', Content: '未找到对话容器 (#mc-agent-content-container)' }];
+        }
+
+        var turns = container.querySelectorAll('section.chat-turn[data-role]');
+        var results = [{ Role: 'Task', Type: 'info', Content: '[#' + index + ' ' + chatSessionId + '] ' + taskTitle }];
+
+        if (turns.length === 0) {
+          results.push({ Role: 'Info', Type: 'info', Content: '该任务暂无对话内容' });
+          return results;
+        }
+
+        function getText(el) {
+          return (el.innerText || el.textContent || '').trim();
+        }
+
+        function classifyTask(el) {
+          var hasTool = el.querySelector('.ai-agent-task-tool');
+          var mdEl = el.querySelector('.chat-markdown');
+          var runCmd = el.querySelector('.icd-run-command-card-v2');
+          var search = el.querySelector('.icd-search-workspace-card');
+          var fileView = el.querySelector('.icd-file-view');
+          var editEl = el.querySelector('[class*="code-edit"], [class*="diff"]');
+
+          if (runCmd) return 'run-command';
+          if (search) return 'search';
+          if (fileView && (mdEl || editEl)) return 'edit-file';
+          if (fileView) return 'read-file';
+          if (mdEl && !hasTool) return 'text';
+          if (mdEl && hasTool) return 'text+tool';
+          return 'tool';
+        }
+
+        function classifyChunk(el) {
+          var section = el.querySelector('.ai-agent-task-section');
+          if (!section) return 'chunk';
+          var cls = section.className || '';
+          if (cls.indexOf('todo') >= 0) return 'todo';
+          if (cls.indexOf('thinking') >= 0) return 'thinking';
+          return 'section';
+        }
+
+        function extractToolDetail(el, type) {
+          if (type === 'search') {
+            var card = el.querySelector('.icd-search-workspace-card');
+            return card ? getText(card) : '';
+          }
+          if (type === 'read-file' || type === 'edit-file') {
+            var fv = el.querySelector('.icd-file-view');
+            var label = fv ? fv.querySelector('.monaco-highlighted-label, [class*="file-name"], [class*="filename"]') : null;
+            return label ? getText(label) : (fv ? getText(fv) : '');
+          }
+          if (type === 'run-command') {
+            var cmd = el.querySelector('.icd-run-command-card-v2');
+            return cmd ? getText(cmd) : '';
+          }
+          return '';
+        }
+
+        function parseAssistant(contentEl) {
+          var items = contentEl.querySelectorAll(':scope .ai-agent-task, :scope .ai-agent-task-chunk');
+          if (items.length === 0) {
+            return [{ Role: 'Assistant', Type: 'text', Content: getText(contentEl) }];
+          }
+
+          var rows = [];
+          for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            var isChunk = item.classList.contains('ai-agent-task-chunk');
+            var type, content;
+
+            if (isChunk) {
+              type = classifyChunk(item);
+              content = getText(item);
+            } else {
+              type = classifyTask(item);
+              var mdEl = item.querySelector('.chat-markdown');
+              if (type === 'text' || type === 'text+tool') {
+                content = mdEl ? getText(mdEl) : getText(item);
+              } else {
+                var mdText = mdEl ? getText(mdEl) : '';
+                var toolText = extractToolDetail(item, type);
+                content = mdText ? mdText + '\n' + toolText : toolText;
+              }
+            }
+
+            if (content.length > 10000) {
+              content = content.substring(0, 10000) + '... (truncated)';
+            }
+
+            rows.push({ Role: 'Assistant', Type: type, Content: content || '(empty)' });
+          }
+          return rows;
+        }
+
+        turns.forEach(function(turn) {
+          var role = turn.getAttribute('data-role');
+          if (role === 'user') {
+            var userEl = turn.querySelector('.icube-value');
+            var text = userEl ? getText(userEl) : '';
+            results.push({ Role: 'User', Type: 'message', Content: text || '(empty)' });
+          } else {
+            var assistEl = turn.querySelector('.assistant-chat-turn-content');
+            if (assistEl) {
+              var rows = parseAssistant(assistEl);
+              for (var j = 0; j < rows.length; j++) {
+                results.push(rows[j]);
+              }
+            } else {
+              results.push({ Role: 'Assistant', Type: 'text', Content: '(empty)' });
+            }
+          }
+        });
+
+        return results;
+      })()

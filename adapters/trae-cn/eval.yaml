@@ -1,0 +1,19 @@
+site: trae-cn
+name: eval
+description: 执行 JavaScript 代码
+domain: localhost
+strategy: ui
+browser: true
+hidden: true
+
+args:
+  code:
+    positional: true
+    type: string
+    required: true
+    description: JavaScript 代码
+
+columns: [Result]
+
+pipeline:
+  - evaluate: ${{ args.code }}

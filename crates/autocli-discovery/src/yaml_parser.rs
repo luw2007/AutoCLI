@@ -80,6 +80,7 @@ pub fn parse_yaml_adapter(content: &str) -> Result<CliCommand, CliError> {
         func: None,
         timeout_seconds: raw.get("timeoutSeconds").and_then(|v| v.as_u64()),
         navigate_before: NavigateBefore::default(),
+        hidden: raw.get("hidden").and_then(|v| v.as_bool()).unwrap_or(false),
     })
 }
 

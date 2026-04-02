@@ -1,0 +1,58 @@
+site: trae-cn
+name: context
+description: 获取当前上下文信息
+domain: localhost
+strategy: ui
+browser: true
+
+columns: [Type, Content, Count]
+
+pipeline:
+  - evaluate: |
+      (function() {
+        var results = [];
+
+        results.push({
+          Type: '窗口',
+          Content: document.title || '(无标题)',
+          Count: 1
+        });
+
+        var container = document.querySelector('#mc-agent-content-container');
+        if (container) {
+          var turns = container.querySelectorAll('section.chat-turn[data-role]');
+          results.push({ Type: '对话轮次', Content: '当前会话', Count: turns.length });
+        }
+
+        var fileRefs = document.querySelectorAll('.file-reference-item, [class*="file-ref"], [class*="reference-file"]');
+        if (fileRefs.length > 0) {
+          var files = [];
+          fileRefs.forEach(function(el) {
+            var label = el.querySelector('.monaco-highlighted-label, [class*="label"]');
+            if (label) files.push(label.textContent.trim());
+          });
+          results.push({
+            Type: '文件引用',
+            Content: files.slice(0, 8).join(', ') || '(无标签)',
+            Count: fileRefs.length
+          });
+        }
+
+        var codeRefs = document.querySelectorAll('[class*="code-reference"]');
+        if (codeRefs.length > 0) {
+          results.push({ Type: '代码引用', Content: '活跃', Count: codeRefs.length });
+        }
+
+        var refContainers = document.querySelectorAll('[class*="icube-references"]');
+        if (refContainers.length > 0) {
+          results.push({ Type: '引用容器', Content: '含文件/代码/图片等引用', Count: refContainers.length });
+        }
+
+        var taskList = document.querySelector('[class*="task-items-list"]');
+        if (taskList) {
+          var taskCount = taskList.querySelectorAll(':scope > [class*="task-item"]').length;
+          results.push({ Type: '任务', Content: '任务列表', Count: taskCount });
+        }
+
+        return results;
+      })()

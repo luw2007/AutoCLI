@@ -40,6 +40,21 @@ fn build_cli(registry: &Registry, external_clis: &[ExternalCli]) -> Command {
                 .global(true)
                 .action(ArgAction::SetTrue)
                 .help("Enable verbose output"),
+        )
+        .arg(
+            Arg::new("limit")
+                .long("limit")
+                .short('n')
+                .global(true)
+                .value_parser(clap::value_parser!(usize))
+                .help("Limit output to first N items"),
+        )
+        .arg(
+            Arg::new("last")
+                .long("last")
+                .global(true)
+                .value_parser(clap::value_parser!(usize))
+                .help("Show only the last N items"),
         );
 
     // Add site subcommands from the adapter registry
@@ -48,27 +63,37 @@ fn build_cli(registry: &Registry, external_clis: &[ExternalCli]) -> Command {
 
         for cmd in registry.list_commands(site) {
             let mut sub = Command::new(cmd.name.clone()).about(cmd.description.clone());
+            if cmd.hidden {
+                sub = sub.hide(true);
+            }
 
             for arg_def in &cmd.args {
+                let is_bool = matches!(
+                    arg_def.arg_type,
+                    opencli_rs_core::ArgType::Bool | opencli_rs_core::ArgType::Boolean
+                );
                 let mut arg = if arg_def.positional {
                     Arg::new(arg_def.name.clone())
                 } else {
                     Arg::new(arg_def.name.clone()).long(arg_def.name.clone())
                 };
+                if is_bool && !arg_def.positional {
+                    arg = arg.action(ArgAction::SetTrue);
+                }
                 if let Some(desc) = &arg_def.description {
                     arg = arg.help(desc.clone());
                 }
                 if arg_def.required {
                     arg = arg.required(true);
                 }
-                if let Some(default) = &arg_def.default {
-                    // Value::String("x").to_string() produces "\"x\"" (JSON-encoded),
-                    // but clap needs the raw string value.
-                    let default_str = match default {
-                        Value::String(s) => s.clone(),
-                        other => other.to_string(),
-                    };
-                    arg = arg.default_value(default_str);
+                if !is_bool {
+                    if let Some(default) = &arg_def.default {
+                        let default_str = match default {
+                            Value::String(s) => s.clone(),
+                            other => other.to_string(),
+                        };
+                        arg = arg.default_value(default_str);
+                    }
                 }
                 sub = sub.arg(arg);
             }
@@ -582,6 +607,8 @@ async fn main() {
 
     let format_str = matches.get_one::<String>("format").unwrap().clone();
     let verbose = matches.get_flag("verbose");
+    let limit = matches.get_one::<usize>("limit").copied();
+    let last = matches.get_one::<usize>("last").copied();
 
     if verbose {
         tracing::info!("Verbose mode enabled");
@@ -1021,7 +1048,14 @@ async fn main() {
                 // Collect raw args from clap matches
                 let mut raw_args: HashMap<String, String> = HashMap::new();
                 for arg_def in &cmd.args {
-                    if let Some(val) = cmd_matches.get_one::<String>(&arg_def.name) {
+                    let is_bool = matches!(
+                        arg_def.arg_type,
+                        opencli_rs_core::ArgType::Bool | opencli_rs_core::ArgType::Boolean
+                    );
+                    if is_bool && !arg_def.positional {
+                        let flag_val = cmd_matches.get_flag(&arg_def.name);
+                        raw_args.insert(arg_def.name.clone(), flag_val.to_string());
+                    } else if let Some(val) = cmd_matches.get_one::<String>(&arg_def.name) {
                         raw_args.insert(arg_def.name.clone(), val.clone());
                     }
                 }
@@ -1050,6 +1084,8 @@ async fn main() {
                             elapsed: Some(start.elapsed()),
                             source: Some(cmd.full_name()),
                             footer_extra: None,
+                            limit,
+                            last,
                         };
                         let output = render(&data, &opts);
                         println!("{}", output);

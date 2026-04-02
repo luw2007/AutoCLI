@@ -1,0 +1,54 @@
+site: trae-cn
+name: debug-dom
+description: 详细探查 Trae DOM 结构
+domain: localhost
+strategy: ui
+browser: true
+hidden: true
+
+args:
+  selector:
+    positional: true
+    type: string
+    default: ".chat-input-v2-input-box-editable"
+    description: CSS 选择器
+
+columns: [Info]
+
+pipeline:
+  - evaluate: |
+      (function() {
+        const selector = ${{ args.selector | json }};
+        const elements = document.querySelectorAll(selector);
+        
+        if (elements.length === 0) {
+          return [{ Info: 'Element not found: ' + selector }];
+        }
+        
+        const results = [];
+        elements.forEach((el, i) => {
+          const info = {
+            index: i,
+            tagName: el.tagName,
+            id: el.id,
+            className: el.className,
+            attributes: {},
+            parent: {
+              tagName: el.parentElement?.tagName,
+              className: el.parentElement?.className
+            },
+            children: el.children.length,
+            textContent: el.textContent.substring(0, 200),
+            innerHTML: el.innerHTML.substring(0, 300)
+          };
+          
+          // 获取所有属性
+          Array.from(el.attributes).forEach(attr => {
+            info.attributes[attr.name] = attr.value;
+          });
+          
+          results.push({ Info: JSON.stringify(info, null, 2) });
+        });
+        
+        return results.slice(0, 3);
+      })()

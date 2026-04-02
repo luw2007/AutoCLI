@@ -1,0 +1,92 @@
+site: trae-cn
+name: task-info-watch
+description: 持续监控任务对话内容（动态刷新）
+domain: localhost
+strategy: ui
+browser: true
+
+args:
+  index:
+    positional: true
+    type: int
+    default: 1
+    description: 任务索引（从 1 开始）
+  interval:
+    long: interval
+    type: int
+    default: 2
+    description: 刷新间隔（秒）
+  count:
+    long: count
+    type: int
+    default: 10
+    description: 刷新次数（0 表示无限）
+
+columns: [Time, Role, Content]
+
+pipeline:
+  - evaluate: |
+      (async () => {
+        const index = ${{ args.index }} || 1;
+        const interval = ${{ args.interval }} || 2;
+        const maxCount = ${{ args.count }} || 10;
+
+        const taskList = document.querySelector('[class*="task-items-list"]');
+
+        if (!taskList) {
+          return [{ Time: '-', Role: 'Error', Content: '未找到任务列表' }];
+        }
+
+        const tasks = taskList.querySelectorAll(':scope > [class*="task-item"]');
+
+        if (tasks.length === 0) {
+          return [{ Time: '-', Role: 'Error', Content: '暂无任务' }];
+        }
+
+        if (index < 1 || index > tasks.length) {
+          return [{ Time: '-', Role: 'Error', Content: '任务索引超出范围 (1-' + tasks.length + ')' }];
+        }
+
+        const task = tasks[index - 1];
+        const isSelected = task.className.indexOf('selected') >= 0;
+
+        if (!isSelected) {
+          task.click();
+          await new Promise(r => setTimeout(r, 800));
+        }
+
+        const chatContainer = document.querySelector('#mc-agent-content-container');
+
+        if (!chatContainer) {
+          return [{ Time: '-', Role: 'Error', Content: '未找到对话内容容器' }];
+        }
+
+        const results = [];
+        const timestamp = new Date().toLocaleTimeString();
+
+        const turns = chatContainer.querySelectorAll('section.chat-turn[data-role]');
+
+        if (turns.length === 0) {
+          const text = chatContainer.innerText || chatContainer.textContent;
+          results.push({ Time: timestamp, Role: 'Content', Content: text.trim() || '容器内容为空' });
+        } else {
+          turns.forEach(turn => {
+            const role = turn.getAttribute('data-role');
+            let text = '';
+            if (role === 'user') {
+              const el = turn.querySelector('.icube-value');
+              text = el ? el.innerText : turn.innerText;
+            } else {
+              const el = turn.querySelector('.assistant-chat-turn-content');
+              text = el ? el.innerText : turn.innerText;
+            }
+            results.push({
+              Time: timestamp,
+              Role: role === 'user' ? 'User' : 'Assistant',
+              Content: text.trim()
+            });
+          });
+        }
+
+        return results.length > 0 ? results : [{ Time: timestamp, Role: 'Info', Content: '未找到对话内容' }];
+      })()

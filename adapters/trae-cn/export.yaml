@@ -1,0 +1,30 @@
+site: trae-cn
+name: export
+description: 将当前对话导出为 Markdown 格式
+domain: localhost
+strategy: ui
+browser: true
+
+columns: [Markdown]
+
+pipeline:
+  - evaluate: |
+      (function() {
+        const turns = Array.from(document.querySelectorAll('section.chat-turn[data-role]'));
+        let markdown = '# Trae 会话导出\n\n';
+        markdown += '导出时间: ' + new Date().toLocaleString('zh-CN') + '\n\n---\n\n';
+        turns.forEach(turn => {
+          const role = turn.getAttribute('data-role');
+          const roleLabel = role === 'user' ? '👤 用户' : '🤖 助手';
+          let text = '';
+          if (role === 'user') {
+            const el = turn.querySelector('.icube-value');
+            text = el ? el.innerText : turn.innerText;
+          } else {
+            const el = turn.querySelector('.assistant-chat-turn-content');
+            text = el ? el.innerText : turn.innerText;
+          }
+          markdown += '### ' + roleLabel + '\n\n' + text.trim() + '\n\n---\n\n';
+        });
+        return [{ Markdown: markdown }];
+      })()

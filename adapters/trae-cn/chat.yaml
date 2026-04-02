@@ -1,0 +1,97 @@
+site: trae-cn
+name: chat
+description: 向指定任务发送消息（可选择任务或新建任务）
+domain: localhost
+strategy: ui
+browser: true
+
+args:
+  text:
+    positional: true
+    type: string
+    required: true
+    description: 要发送的文本内容
+  task:
+    type: string
+    short: t
+    default: ""
+    description: 任务编号 (如 #1, #2) 或 "new" 创建新任务
+
+columns: [Status, Action, Message]
+
+pipeline:
+  - evaluate: |
+      (async () => {
+        var text = ${{ args.text | json }};
+        var taskArg = ${{ args.task | json }} || "";
+
+        var results = [];
+
+        var taskList = document.querySelector('[class*="task-items-list"]');
+
+        if (taskArg && taskArg !== "") {
+          if (taskArg.toLowerCase() === "new") {
+            var newBtn = document.querySelector('[class*="new-task-button"]');
+            if (newBtn) {
+              newBtn.click();
+              await new Promise(function(r) { setTimeout(r, 800); });
+              results.push({ Status: 'Success', Action: '新建任务', Message: '已创建新任务' });
+            } else {
+              document.dispatchEvent(new KeyboardEvent('keydown', {
+                key: 'n',
+                code: 'KeyN',
+                metaKey: true,
+                bubbles: true
+              }));
+              await new Promise(function(r) { setTimeout(r, 800); });
+              results.push({ Status: 'Success', Action: '新建任务', Message: '已触发新建任务快捷键' });
+            }
+          } else {
+            var taskIndex = parseInt(taskArg.replace('#', ''));
+            if (!isNaN(taskIndex) && taskList) {
+              var tasks = taskList.querySelectorAll(':scope > [class*="task-item"]');
+              if (tasks && taskIndex >= 1 && taskIndex <= tasks.length) {
+                var task = tasks[taskIndex - 1];
+                var isSelected = task.className.indexOf('selected') >= 0;
+                if (!isSelected) {
+                  task.click();
+                  await new Promise(function(r) { setTimeout(r, 600); });
+                  results.push({ Status: 'Success', Action: '切换任务', Message: '已切换到任务 #' + taskIndex });
+                } else {
+                  results.push({ Status: 'Info', Action: '切换任务', Message: '任务 #' + taskIndex + ' 已是当前选中' });
+                }
+              } else {
+                return [{ Status: 'Error', Action: '切换任务', Message: '任务索引超出范围或任务列表未找到' }];
+              }
+            }
+          }
+        }
+
+        await new Promise(function(r) { setTimeout(r, 300); });
+
+        var editor = document.querySelector('.inputarea.monaco-mouse-cursor-text, textarea.inputarea');
+        if (!editor) {
+          return results.concat([{ Status: 'Error', Action: '输入文本', Message: '未找到输入框' }]);
+        }
+
+        editor.focus();
+        await new Promise(function(r) { setTimeout(r, 100); });
+
+        var nativeInputValueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+        nativeInputValueSetter.call(editor, text);
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        await new Promise(function(r) { setTimeout(r, 200); });
+
+        results.push({ Status: 'Success', Action: '输入文本', Message: text.substring(0, 50) + (text.length > 50 ? '...' : '') });
+
+        editor.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Enter',
+          code: 'Enter',
+          keyCode: 13,
+          bubbles: true
+        }));
+        await new Promise(function(r) { setTimeout(r, 500); });
+        results.push({ Status: 'Success', Action: '发送消息', Message: '已按 Enter 发送' });
+
+        return results;
+      })()
