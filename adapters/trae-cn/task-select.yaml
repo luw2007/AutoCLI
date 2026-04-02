@@ -8,16 +8,16 @@ browser: true
 args:
   index:
     positional: true
-    type: int
-    default: 1
-    description: 任务索引（从 1 开始）
+    type: string
+    default: "1"
+    description: 任务索引（从 1 开始）或 sessionId
 
 columns: [Status, Message]
 
 pipeline:
   - evaluate: |
       (async () => {
-        const index = ${{ args.index }} || 1;
+        const indexArg = ${{ args.index | json }} || "1";
         const taskList = document.querySelector('[class*="task-items-list"]');
         
         if (!taskList) {
@@ -29,21 +29,52 @@ pipeline:
         if (tasks.length === 0) {
           return [{ Status: 'Error', Message: '暂无任务' }];
         }
-        
-        if (index < 1 || index > tasks.length) {
-          return [{ Status: 'Error', Message: `任务索引超出范围 (1-${tasks.length})` }];
+
+        function getSessionId(el) {
+          var fk = Object.keys(el).find(function(k) { return k.startsWith('__reactFiber$'); });
+          if (!fk) return '';
+          var cur = el[fk];
+          for (var n = 0; n < 5 && cur; n++) {
+            var p = cur.memoizedProps || {};
+            if (p.session && p.session.sessionId) return p.session.sessionId;
+            cur = cur.return;
+          }
+          return '';
         }
-        
-        const task = tasks[index - 1];
-        
-        const isSelected = task.className.indexOf('selected') >= 0;
+
+        var index = parseInt(indexArg);
+        var isNumeric = !isNaN(index) && /^\d+$/.test(indexArg);
+        var target = null;
+        var label = '';
+
+        if (isNumeric) {
+          if (index < 1 || index > tasks.length) {
+            return [{ Status: 'Error', Message: `任务索引超出范围 (1-${tasks.length})` }];
+          }
+          target = tasks[index - 1];
+          label = `任务 #${index}`;
+        } else {
+          for (var si = 0; si < tasks.length; si++) {
+            var sid = getSessionId(tasks[si]);
+            if (sid && sid === indexArg) {
+              target = tasks[si];
+              label = `任务 #${si + 1} (session ${indexArg.substring(0, 8)}...)`;
+              break;
+            }
+          }
+          if (!target) {
+            return [{ Status: 'Error', Message: `未找到 sessionId: ${indexArg}` }];
+          }
+        }
+
+        const isSelected = target.className.indexOf('selected') >= 0;
         
         if (isSelected) {
-          return [{ Status: 'Info', Message: `任务 #${index} 已是当前选中状态` }];
+          return [{ Status: 'Info', Message: `${label} 已是当前选中状态` }];
         }
         
-        task.click();
+        target.click();
         await new Promise(r => setTimeout(r, 500));
         
-        return [{ Status: 'Success', Message: `已切换到任务 #${index}` }];
+        return [{ Status: 'Success', Message: `已切换到 ${label}` }];
       })()

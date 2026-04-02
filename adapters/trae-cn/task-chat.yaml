@@ -1,5 +1,5 @@
 site: trae-cn
-name: chat
+name: task-chat
 description: 向指定任务发送消息（可选择任务或新建任务）
 domain: localhost
 strategy: ui
@@ -15,7 +15,7 @@ args:
     type: string
     short: t
     default: ""
-    description: 任务编号 (如 #1, #2) 或 "new" 创建新任务
+    description: 任务编号 (#1, #2)、sessionId 或 "new" 创建新任务
 
 columns: [Status, Action, Message]
 
@@ -26,6 +26,18 @@ pipeline:
         var taskArg = ${{ args.task | json }} || "";
 
         var results = [];
+
+        function getSessionId(el) {
+          var fk = Object.keys(el).find(function(k) { return k.startsWith('__reactFiber$'); });
+          if (!fk) return '';
+          var cur = el[fk];
+          for (var n = 0; n < 5 && cur; n++) {
+            var p = cur.memoizedProps || {};
+            if (p.session && p.session.sessionId) return p.session.sessionId;
+            cur = cur.return;
+          }
+          return '';
+        }
 
         var taskList = document.querySelector('[class*="task-items-list"]');
 
@@ -48,7 +60,9 @@ pipeline:
             }
           } else {
             var taskIndex = parseInt(taskArg.replace('#', ''));
-            if (!isNaN(taskIndex) && taskList) {
+            var isNumericIndex = !isNaN(taskIndex) && /^#?\d+$/.test(taskArg);
+
+            if (isNumericIndex && taskList) {
               var tasks = taskList.querySelectorAll(':scope > [class*="task-item"]');
               if (tasks && taskIndex >= 1 && taskIndex <= tasks.length) {
                 var task = tasks[taskIndex - 1];
@@ -63,6 +77,30 @@ pipeline:
               } else {
                 return [{ Status: 'Error', Action: '切换任务', Message: '任务索引超出范围或任务列表未找到' }];
               }
+            } else if (taskList) {
+              var sessionId = taskArg;
+              var tasks = taskList.querySelectorAll(':scope > [class*="task-item"]');
+              var found = false;
+              for (var si = 0; si < tasks.length; si++) {
+                var sid = getSessionId(tasks[si]);
+                if (sid && sid === sessionId) {
+                  var isSelected = tasks[si].className.indexOf('selected') >= 0;
+                  if (!isSelected) {
+                    tasks[si].click();
+                    await new Promise(function(r) { setTimeout(r, 600); });
+                    results.push({ Status: 'Success', Action: '切换任务', Message: '已通过 session 切换到任务 #' + (si + 1) });
+                  } else {
+                    results.push({ Status: 'Info', Action: '切换任务', Message: '任务 (session ' + sessionId.substring(0, 8) + '...) 已是当前选中' });
+                  }
+                  found = true;
+                  break;
+                }
+              }
+              if (!found) {
+                return [{ Status: 'Error', Action: '切换任务', Message: '未找到 sessionId: ' + sessionId }];
+              }
+            } else {
+              return [{ Status: 'Error', Action: '切换任务', Message: '任务列表未找到' }];
             }
           }
         }
