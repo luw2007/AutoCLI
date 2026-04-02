@@ -15,7 +15,7 @@ list_pages() {
     curl -sf "${CDP_BASE}/json/list" | jq -r '
         to_entries[]
         | select(.value.type == "page")
-        | "\(.key)\t\(.value.id)\t\(.value.title)"
+        | "\(.key)\t\(.value.id)\t\(.value.title)\t\(.value.url)\t\(.value.type)"
     '
 }
 
@@ -127,30 +127,32 @@ case "$cmd" in
             json)
                 echo "$all_pages" | awk -F'\t' -v active="$active_id" 'BEGIN{printf "["} NR>1{printf ","} {
                     gsub(/"/, "\\\"", $3);
+                    gsub(/"/, "\\\"", $4);
                     active_flag = ($2 == active) ? "true" : "false";
-                    printf "{\"index\":%d,\"id\":\"%s\",\"title\":\"%s\",\"active\":%s}", NR, $2, $3, active_flag
+                    printf "{\"index\":%d,\"id\":\"%s\",\"title\":\"%s\",\"url\":\"%s\",\"type\":\"%s\",\"active\":%s}", NR, $2, $3, $4, $5, active_flag
                 } END{printf "]\n"}'
                 ;;
             csv)
-                echo "Index,Id,Title,Active"
+                echo "Index,Id,Title,Url,Type,Active"
                 echo "$all_pages" | awk -F'\t' -v active="$active_id" '{
                     gsub(/"/, "\"\"", $3);
+                    gsub(/"/, "\"\"", $4);
                     active_flag = ($2 == active) ? "true" : "false";
-                    printf "%d,\"%s\",\"%s\",%s\n", NR, $2, $3, active_flag
+                    printf "%d,\"%s\",\"%s\",\"%s\",\"%s\",%s\n", NR, $2, $3, $4, $5, active_flag
                 }'
                 ;;
             yaml)
                 echo "$all_pages" | awk -F'\t' -v active="$active_id" '{
                     active_flag = ($2 == active) ? "true" : "false";
-                    printf "- index: %d\n  id: \"%s\"\n  title: \"%s\"\n  active: %s\n", NR, $2, $3, active_flag
+                    printf "- index: %d\n  id: \"%s\"\n  title: \"%s\"\n  url: \"%s\"\n  type: \"%s\"\n  active: %s\n", NR, $2, $3, $4, $5, active_flag
                 }'
                 ;;
             md|markdown)
-                echo "| Index | Title | Id | Active |"
-                echo "|-------|-------|----|--------|"
+                echo "| Index | Title | Id | Url | Type | Active |"
+                echo "|-------|-------|----|-----|------|--------|"
                 echo "$all_pages" | awk -F'\t' -v active="$active_id" '{
                     active_flag = ($2 == active) ? "✦" : "";
-                    printf "| %d | %s | %s | %s |\n", NR, $3, $2, active_flag
+                    printf "| %d | %s | %s | %s | %s | %s |\n", NR, $3, $2, $4, $5, active_flag
                 }'
                 ;;
             *)
