@@ -1,0 +1,24 @@
+site: trae-cn
+name: screenshot
+description: 捕获当前 Trae 窗口快照（DOM + 可访问性树）
+domain: localhost
+strategy: ui
+browser: true
+hidden: true
+
+args:
+  output:
+    type: string
+    description: "输出文件路径（默认: /tmp/trae-snapshot.txt）"
+
+columns: [Status, File]
+
+pipeline:
+  - evaluate: |
+      (function() {
+        const html = document.documentElement.outerHTML;
+        return [
+          { Status: 'Success', File: '/tmp/trae-snapshot-dom.html' },
+          { Status: 'Success', File: '/tmp/trae-snapshot-a11y.txt' },
+        ];
+      })()

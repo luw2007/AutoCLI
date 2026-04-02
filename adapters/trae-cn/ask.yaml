@@ -1,0 +1,70 @@
+site: trae-cn
+name: ask
+description: 发送提示并等待 AI 回复（send + wait + read）
+domain: localhost
+strategy: ui
+browser: true
+
+args:
+  text:
+    positional: true
+    type: string
+    required: true
+    description: 要发送的提示内容
+  timeout:
+    type: int
+    default: 30
+    description: 等待回复的最大秒数
+
+columns: [Role, Text]
+
+pipeline:
+  - evaluate: |
+      (async () => {
+        var text = ${{ args.text | json }};
+        var timeout = ${{ args.timeout }} || 30;
+
+        var beforeCount = document.querySelectorAll('section.chat-turn[data-role]').length;
+
+        var editor = document.querySelector('.inputarea.monaco-mouse-cursor-text, textarea.inputarea');
+        if (!editor) return [{ Role: 'System', Text: '未找到输入元素' }];
+        editor.focus();
+
+        var nativeInputValueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+        nativeInputValueSetter.call(editor, text);
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        await new Promise(function(r) { setTimeout(r, 500); });
+
+        editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+
+        var pollInterval = 2;
+        var maxPolls = Math.ceil(timeout / pollInterval);
+        var response = '';
+
+        for (var i = 0; i < maxPolls; i++) {
+          await new Promise(function(r) { setTimeout(r, pollInterval * 1000); });
+
+          var allTurns = document.querySelectorAll('section.chat-turn[data-role]');
+          if (allTurns.length <= beforeCount) continue;
+
+          var lastTurn = allTurns[allTurns.length - 1];
+          var role = lastTurn.getAttribute('data-role');
+          if (role === 'user') continue;
+
+          var content = lastTurn.querySelector('.assistant-chat-turn-content');
+          var t = content ? content.innerText : lastTurn.innerText;
+          if (t && t.trim()) { response = t.trim(); break; }
+        }
+
+        if (!response) {
+          return [
+            { Role: 'User', Text: text },
+            { Role: 'System', Text: '在 ' + timeout + ' 秒内未收到回复。AI 可能仍在生成中。' },
+          ];
+        }
+
+        return [
+          { Role: 'User', Text: text },
+          { Role: 'Assistant', Text: response },
+        ];
+      })()

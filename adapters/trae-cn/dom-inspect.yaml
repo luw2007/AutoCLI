@@ -1,0 +1,42 @@
+site: trae-cn
+name: dom-inspect
+description: 探查 Trae DOM 结构（用于开发调试）
+domain: localhost
+strategy: ui
+browser: true
+hidden: true
+
+args:
+  selector:
+    positional: true
+    type: string
+    default: "body"
+    description: CSS 选择器
+
+columns: [Selector, Count, Sample]
+
+pipeline:
+  - evaluate: |
+      (function() {
+        const selector = ${{ args.selector | json }};
+        const elements = document.querySelectorAll(selector);
+        
+        if (elements.length === 0) {
+          return [{ Selector: selector, Count: 0, Sample: 'Not found' }];
+        }
+        
+        const sample = elements[0];
+        const info = {
+          tagName: sample.tagName,
+          id: sample.id,
+          className: sample.className,
+          attributes: Array.from(sample.attributes).map(a => `${a.name}="${a.value}"`).join(', '),
+          textContent: sample.textContent.substring(0, 100)
+        };
+        
+        return [{
+          Selector: selector,
+          Count: elements.length,
+          Sample: JSON.stringify(info, null, 2)
+        }];
+      })()

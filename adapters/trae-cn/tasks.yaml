@@ -1,0 +1,116 @@
+site: trae-cn
+name: tasks
+description: 查看任务列表
+domain: localhost
+strategy: ui
+browser: true
+timeout_seconds: 120
+
+args:
+  all:
+    type: bool
+    default: false
+    description: 滚动加载全部任务后输出
+
+columns: [Index, Status, Title, Time, SessionId]
+
+pipeline:
+  - evaluate: |
+      (async function() {
+        var taskList = document.querySelector('[class*="task-items-list"]');
+        if (!taskList) {
+          return [{ Index: '-', Status: '-', Title: '未找到任务列表', Time: '-' }];
+        }
+
+        var loadAll = Boolean(args.all);
+        if (loadAll) {
+          var prevCount = -1;
+          var stableRounds = 0;
+          for (var attempt = 0; attempt < 100; attempt++) {
+            var curCount = taskList.querySelectorAll(':scope > [class*="task-item"]').length;
+            if (curCount === prevCount) {
+              stableRounds++;
+              if (stableRounds >= 3) break;
+            } else {
+              stableRounds = 0;
+            }
+            prevCount = curCount;
+            taskList.scrollTop = taskList.scrollHeight;
+            await new Promise(function(r) { setTimeout(r, 300); });
+          }
+          taskList.scrollTop = 0;
+        }
+
+        var tasks = taskList.querySelectorAll(':scope > [class*="task-item"]');
+        if (tasks.length === 0) {
+          return [{ Index: '-', Status: '-', Title: '暂无任务', Time: '-' }];
+        }
+
+        var results = [];
+
+        function getSessionId(el) {
+          var fk = Object.keys(el).find(function(k) { return k.startsWith('__reactFiber$'); });
+          if (!fk) return '-';
+          var cur = el[fk];
+          for (var n = 0; n < 5 && cur; n++) {
+            var p = cur.memoizedProps || {};
+            if (p.session && p.session.sessionId) return p.session.sessionId;
+            cur = cur.return;
+          }
+          return '-';
+        }
+
+        tasks.forEach(function(task, i) {
+          var titleEl = task.querySelector('[class*="task-title"]');
+          var title = titleEl ? titleEl.innerText.trim() : '';
+          var isSelected = task.className.indexOf('selected') >= 0;
+          var fullText = task.innerText.replace(/\n/g, ' | ').trim();
+
+          var statusEl = task.querySelector('[class*="task-type-wrap__status"]');
+          var rawStatus = statusEl ? statusEl.innerText.trim() : '';
+
+          var status = '待处理';
+          var time = '-';
+
+          if (rawStatus.indexOf('等待') >= 0 || rawStatus.indexOf('waiting') >= 0) {
+            status = '⏳ 等待操作';
+          } else if (rawStatus.indexOf('进行中') >= 0 || rawStatus === 'Running') {
+            status = '进行中';
+          } else if (rawStatus.indexOf('完成') >= 0 || rawStatus === 'Completed') {
+            status = '已完成';
+          } else if (rawStatus.indexOf('失败') >= 0 || rawStatus === 'Failed') {
+            status = '❌ 失败';
+          } else if (rawStatus.indexOf('停止') >= 0 || rawStatus.indexOf('取消') >= 0) {
+            status = '⏹ 已停止';
+          } else if (rawStatus) {
+            status = rawStatus;
+          } else if (fullText.indexOf('等待') >= 0) {
+            status = '⏳ 等待操作';
+          } else if (fullText.indexOf('进行中') >= 0) {
+            status = '进行中';
+          } else if (fullText.indexOf('已完成') >= 0 || fullText.indexOf('任务完成') >= 0) {
+            status = '已完成';
+          } else if (isSelected) {
+            status = '进行中';
+          }
+
+          var timeMatch = fullText.match(/(\d{1,2}:\d{2})/);
+          if (timeMatch) {
+            time = timeMatch[1];
+          }
+
+          if (title.length > 50) {
+            title = title.substring(0, 50) + '...';
+          }
+
+          results.push({
+            Index: i + 1,
+            Status: status + (isSelected ? ' ●' : ''),
+            Title: title || '(untitled)',
+            Time: time,
+            SessionId: getSessionId(task)
+          });
+        });
+
+        return results;
+      })()

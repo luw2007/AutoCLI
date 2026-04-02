@@ -1,0 +1,130 @@
+site: trae-cn
+name: task-detail
+description: 查看任务详情
+domain: localhost
+strategy: ui
+browser: true
+
+args:
+  index:
+    positional: true
+    type: int
+    default: 1
+    description: 任务索引（从 1 开始）
+
+columns: [Field, Value]
+
+pipeline:
+  - evaluate: |
+      (async function() {
+        var index = ${{ args.index }} || 1;
+        var taskList = document.querySelector('[class*="task-items-list"]');
+        if (!taskList) {
+          return [{ Field: 'Error', Value: '未找到任务列表' }];
+        }
+
+        var tasks = taskList.querySelectorAll(':scope > [class*="task-item"]');
+        if (tasks.length === 0) {
+          return [{ Field: 'Error', Value: '暂无任务' }];
+        }
+        if (index < 1 || index > tasks.length) {
+          return [{ Field: 'Error', Value: '任务索引超出范围 (1-' + tasks.length + ')' }];
+        }
+
+        var task = tasks[index - 1];
+        var results = [];
+
+        function getSessionId(el) {
+          var fk = Object.keys(el).find(function(k) { return k.startsWith('__reactFiber$'); });
+          if (!fk) return '-';
+          var cur = el[fk];
+          for (var n = 0; n < 5 && cur; n++) {
+            var p = cur.memoizedProps || {};
+            if (p.session && p.session.sessionId) return p.session.sessionId;
+            cur = cur.return;
+          }
+          return '-';
+        }
+
+        var titleEl = task.querySelector('[class*="task-title"]');
+        results.push({ Field: 'Index', Value: String(index) });
+        results.push({ Field: 'SessionId', Value: getSessionId(task) });
+        results.push({ Field: 'Title', Value: titleEl ? titleEl.innerText.trim() : '(untitled)' });
+
+        var isSelected = task.className.indexOf('selected') >= 0;
+        var fullText = task.innerText.replace(/\n/g, ' | ').trim();
+
+        var statusEl = task.querySelector('[class*="task-type-wrap__status"]');
+        var rawStatus = statusEl ? statusEl.innerText.trim() : '';
+
+        var status = '待处理';
+        var blocked = false;
+        if (rawStatus.indexOf('等待') >= 0 || rawStatus.indexOf('waiting') >= 0) {
+          status = '⏳ 等待操作';
+          blocked = true;
+        } else if (rawStatus.indexOf('进行中') >= 0 || rawStatus === 'Running') {
+          status = '进行中';
+        } else if (rawStatus.indexOf('完成') >= 0 || rawStatus === 'Completed') {
+          status = '已完成';
+        } else if (rawStatus.indexOf('失败') >= 0 || rawStatus === 'Failed') {
+          status = '❌ 失败';
+        } else if (rawStatus.indexOf('停止') >= 0 || rawStatus.indexOf('取消') >= 0) {
+          status = '⏹ 已停止';
+        } else if (rawStatus) {
+          status = rawStatus;
+        } else if (fullText.indexOf('等待') >= 0) {
+          status = '⏳ 等待操作';
+          blocked = true;
+        } else if (fullText.indexOf('进行中') >= 0) {
+          status = '进行中';
+        } else if (fullText.indexOf('已完成') >= 0 || fullText.indexOf('任务完成') >= 0) {
+          status = '已完成';
+        } else if (isSelected) {
+          status = '进行中';
+        }
+
+        results.push({ Field: 'Status', Value: status });
+        results.push({ Field: 'Selected', Value: isSelected ? 'Yes' : 'No' });
+
+        if (!isSelected) {
+          task.click();
+          await new Promise(function(r) { setTimeout(r, 800); });
+        }
+
+        var container = document.querySelector('#mc-agent-content-container');
+        var hasAskCard = false;
+        var askQuestion = '';
+        if (container) {
+          var cards = container.querySelectorAll('[class*="ask-user-question-card-container"]');
+          for (var c = cards.length - 1; c >= 0; c--) {
+            var cn = (typeof cards[c].className === 'string') ? cards[c].className : '';
+            if (cn.indexOf('status-completed') < 0) {
+              hasAskCard = true;
+              var hdr = cards[c].querySelector('[class*="ask-user-question-content-header"], [class*="question-header"]');
+              if (hdr) askQuestion = hdr.textContent.trim().substring(0, 200);
+              break;
+            }
+          }
+        }
+
+        if (hasAskCard && !blocked) {
+          status = '⏳ 等待操作 (问询中)';
+          results[2] = { Field: 'Status', Value: status };
+        }
+
+        if (hasAskCard) {
+          results.push({ Field: 'Blocked', Value: 'Yes — 有未回答的问询' });
+          if (askQuestion) {
+            results.push({ Field: 'Question', Value: askQuestion });
+          }
+          results.push({ Field: 'Hint', Value: '使用 task-ask ' + index + ' 查看选项并回答' });
+        } else {
+          results.push({ Field: 'Blocked', Value: blocked ? 'Yes' : 'No' });
+        }
+
+        var timeMatch = fullText.match(/(\d{1,2}:\d{2})/);
+        results.push({ Field: 'Time', Value: timeMatch ? timeMatch[1] : '-' });
+        results.push({ Field: 'Full Text', Value: fullText.substring(0, 300) });
+
+        return results;
+      })()

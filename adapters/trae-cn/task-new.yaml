@@ -1,0 +1,58 @@
+site: trae-cn
+name: task-new
+description: 创建新任务
+domain: localhost
+strategy: ui
+browser: true
+
+args:
+  title:
+    positional: true
+    type: string
+    required: false
+    default: ""
+    description: 任务标题（可选，留空则只点击新建按钮）
+
+columns: [Status, Message]
+
+pipeline:
+  - evaluate: |
+      (async () => {
+        var title = ${{ args.title | json }} || "";
+
+        var newTaskBtn = document.querySelector('[class*="new-task-button"]');
+        if (!newTaskBtn) {
+          return [{ Status: 'Error', Message: '未找到新建任务按钮' }];
+        }
+
+        newTaskBtn.click();
+        await new Promise(function(r) { setTimeout(r, 1000); });
+
+        if (!title) {
+          return [{ Status: 'Success', Message: '已打开新任务对话' }];
+        }
+
+        var chatInput = document.querySelector('.chat-input-v2-input-box-editable');
+        if (!chatInput) {
+          return [{ Status: 'Error', Message: '未找到聊天输入框' }];
+        }
+
+        chatInput.focus();
+        await new Promise(function(r) { setTimeout(r, 100); });
+
+        var sel = window.getSelection();
+        sel.selectAllChildren(chatInput);
+        document.execCommand('delete', false, null);
+        await new Promise(function(r) { setTimeout(r, 50); });
+
+        document.execCommand('insertText', false, title);
+        await new Promise(function(r) { setTimeout(r, 200); });
+
+        var sendBtn = document.querySelector('.chat-input-v2-send-button');
+        if (sendBtn) {
+          sendBtn.click();
+          await new Promise(function(r) { setTimeout(r, 500); });
+        }
+
+        return [{ Status: 'Success', Message: '已创建新任务: ' + title }];
+      })()

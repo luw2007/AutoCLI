@@ -1,0 +1,49 @@
+site: trae-cn
+name: task-select
+description: 选择并点击指定编号的任务
+domain: localhost
+strategy: ui
+browser: true
+
+args:
+  index:
+    positional: true
+    type: int
+    default: 1
+    description: 任务索引（从 1 开始）
+
+columns: [Status, Message]
+
+pipeline:
+  - evaluate: |
+      (async () => {
+        const index = ${{ args.index }} || 1;
+        const taskList = document.querySelector('[class*="task-items-list"]');
+        
+        if (!taskList) {
+          return [{ Status: 'Error', Message: '未找到任务列表' }];
+        }
+        
+        const tasks = taskList.querySelectorAll(':scope > [class*="task-item"]');
+        
+        if (tasks.length === 0) {
+          return [{ Status: 'Error', Message: '暂无任务' }];
+        }
+        
+        if (index < 1 || index > tasks.length) {
+          return [{ Status: 'Error', Message: `任务索引超出范围 (1-${tasks.length})` }];
+        }
+        
+        const task = tasks[index - 1];
+        
+        const isSelected = task.className.indexOf('selected') >= 0;
+        
+        if (isSelected) {
+          return [{ Status: 'Info', Message: `任务 #${index} 已是当前选中状态` }];
+        }
+        
+        task.click();
+        await new Promise(r => setTimeout(r, 500));
+        
+        return [{ Status: 'Success', Message: `已切换到任务 #${index}` }];
+      })()

@@ -2,6 +2,7 @@ use serde_json::Value;
 
 use crate::csv_out::render_csv;
 use crate::format::{OutputFormat, RenderOptions};
+use crate::html::render_html;
 use crate::json::render_json;
 use crate::markdown::render_markdown;
 use crate::table::render_table;
@@ -35,8 +36,44 @@ fn build_footer(opts: &RenderOptions) -> Option<String> {
     }
 }
 
+/// Apply limit/last pagination to array data, returning (sliced_data, pagination_info).
+fn paginate(data: &Value, opts: &RenderOptions) -> (Value, Option<String>) {
+    let arr = match data.as_array() {
+        Some(a) if !a.is_empty() => a,
+        _ => return (data.clone(), None),
+    };
+
+    let total = arr.len();
+
+    if let Some(n) = opts.last {
+        let n = n.min(total);
+        let start = total - n;
+        let sliced = Value::Array(arr[start..].to_vec());
+        let info = if n < total {
+            Some(format!("Showing last {} of {}", n, total))
+        } else {
+            None
+        };
+        return (sliced, info);
+    }
+
+    if let Some(n) = opts.limit {
+        let n = n.min(total);
+        let sliced = Value::Array(arr[..n].to_vec());
+        let info = if n < total {
+            Some(format!("Showing 1-{} of {}", n, total))
+        } else {
+            None
+        };
+        return (sliced, info);
+    }
+
+    (data.clone(), None)
+}
+
 /// Render data according to the given options, returning the formatted string.
 pub fn render(data: &Value, opts: &RenderOptions) -> String {
+    let (data, page_info) = paginate(data, opts);
     let cols = opts.columns.as_deref();
 
     let mut output = match opts.format {
@@ -45,6 +82,7 @@ pub fn render(data: &Value, opts: &RenderOptions) -> String {
         OutputFormat::Yaml => render_yaml(data, cols),
         OutputFormat::Csv => render_csv(data, cols),
         OutputFormat::Markdown => render_markdown(data, cols),
+        OutputFormat::Html => render_html(data, cols),
     };
 
     if let Some(title) = &opts.title {
@@ -53,7 +91,14 @@ pub fn render(data: &Value, opts: &RenderOptions) -> String {
 
     // Only show footer for human-readable formats (Table, Markdown)
     if matches!(opts.format, OutputFormat::Table | OutputFormat::Markdown) {
-        if let Some(footer) = build_footer(opts) {
+        let mut merged = opts.clone();
+        if let Some(info) = page_info {
+            merged.footer_extra = Some(match &merged.footer_extra {
+                Some(existing) => format!("{} | {}", existing, info),
+                None => info,
+            });
+        }
+        if let Some(footer) = build_footer(&merged) {
             if !output.ends_with('\n') {
                 output.push('\n');
             }

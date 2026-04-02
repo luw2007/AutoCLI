@@ -4,6 +4,7 @@ pub mod json;
 pub mod yaml;
 pub mod csv_out;
 pub mod markdown;
+pub mod html;
 pub mod render;
 
 pub use format::{OutputFormat, RenderOptions};

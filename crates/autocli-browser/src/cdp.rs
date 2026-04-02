@@ -209,8 +209,14 @@ impl IPage for CdpPage {
     }
 
     async fn type_text(&self, selector: &str, text: &str) -> Result<(), CliError> {
-        let js = dom_helpers::type_text_js(selector, text);
-        self.evaluate_js(&js, false).await?;
+        let focus_js = dom_helpers::focus_js(selector);
+        self.evaluate_js(&focus_js, false).await?;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        self.send_cdp(
+            "Input.insertText",
+            json!({ "text": text }),
+        )
+        .await?;
         Ok(())
     }
 

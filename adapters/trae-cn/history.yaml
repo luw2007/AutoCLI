@@ -1,0 +1,55 @@
+site: trae-cn
+name: history
+description: 获取 Trae 会话历史列表
+domain: localhost
+strategy: ui
+browser: true
+
+args:
+  max_items:
+    long: max-items
+    type: int
+    default: 20
+    description: 返回的历史记录数量
+
+columns: [Index, Title, Time]
+
+pipeline:
+  - evaluate: |
+      (function() {
+        var maxItems = ${{ args.max_items }} || 20;
+        var container = document.querySelector('#mc-agent-content-container');
+        if (!container) {
+          return [{ Index: '-', Title: '未找到对话容器', Time: '-' }];
+        }
+
+        var turns = container.querySelectorAll('section.chat-turn[data-role]');
+        if (turns.length === 0) {
+          return [{ Index: '-', Title: '暂无对话历史', Time: '-' }];
+        }
+
+        var results = [];
+        for (var i = 0; i < Math.min(turns.length, maxItems); i++) {
+          var turn = turns[i];
+          var role = turn.getAttribute('data-role');
+          var turnIndex = turn.getAttribute('data-turn-index') || String(i + 1);
+          var heading = turn.querySelector('.chat-turn-heading');
+          var timeEl = heading ? heading.querySelector('.user-chat-timestamp') : null;
+
+          var contentEl = role === 'user'
+            ? turn.querySelector('.icube-value')
+            : turn.querySelector('.assistant-chat-turn-content');
+          var text = contentEl ? (contentEl.innerText || '').trim() : '';
+          if (text.length > 100) {
+            text = text.substring(0, 100) + '...';
+          }
+
+          results.push({
+            Index: turnIndex,
+            Title: (role === 'user' ? '[User] ' : '[AI] ') + (text || '(empty)'),
+            Time: timeEl ? timeEl.innerText.trim() : '-'
+          });
+        }
+
+        return results;
+      })()

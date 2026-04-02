@@ -1,0 +1,47 @@
+site: trae-cn
+name: find-input
+description: 查找 Trae 输入框元素
+domain: localhost
+strategy: ui
+browser: true
+hidden: true
+
+columns: [Type, Selector, Attributes, Preview]
+
+pipeline:
+  - evaluate: |
+      (function() {
+        const results = [];
+        
+        // 查找常见的输入框选择器
+        const selectors = [
+          'textarea',
+          'input[type="text"]',
+          '[contenteditable="true"]',
+          '.editor-input',
+          '.input-area',
+          '[class*="input"]',
+          '[class*="editor"]',
+          '[class*="chat"]',
+          '[class*="composer"]',
+          '[data-lexical-editor="true"]'
+        ];
+        
+        selectors.forEach(sel => {
+          const elements = document.querySelectorAll(sel);
+          elements.forEach((el, i) => {
+            results.push({
+              Type: el.tagName,
+              Selector: sel,
+              Attributes: Array.from(el.attributes).map(a => `${a.name}="${a.value.substring(0, 50)}"`).join(' | '),
+              Preview: el.textContent.substring(0, 100) || el.value?.substring(0, 100) || '(empty)'
+            });
+          });
+        });
+        
+        if (results.length === 0) {
+          return [{ Type: '-', Selector: '-', Attributes: '-', Preview: 'No input elements found' }];
+        }
+        
+        return results.slice(0, 20);
+      })()

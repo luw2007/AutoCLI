@@ -1,0 +1,28 @@
+site: trae-cn
+name: dump
+description: 导出当前对话的完整数据（JSON 格式）
+domain: localhost
+strategy: ui
+browser: true
+
+columns: [Data]
+
+pipeline:
+  - evaluate: |
+      (function() {
+        const turns = Array.from(document.querySelectorAll('section.chat-turn[data-role]'));
+        const messages = turns.map(turn => {
+          const role = turn.getAttribute('data-role');
+          let text = '';
+          if (role === 'user') {
+            const el = turn.querySelector('.icube-value');
+            text = el ? el.innerText : turn.innerText;
+          } else {
+            const el = turn.querySelector('.assistant-chat-turn-content');
+            text = el ? el.innerText : turn.innerText;
+          }
+          return { role: role, content: text.trim() };
+        });
+        const data = { messages: messages };
+        return [{ Data: JSON.stringify(data) }];
+      })()

@@ -74,6 +74,7 @@ mod tests {
             func: None,
             timeout_seconds: None,
             navigate_before: NavigateBefore::default(),
+            hidden: false,
         }
     }
 
