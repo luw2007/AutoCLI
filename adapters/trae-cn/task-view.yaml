@@ -8,32 +8,21 @@ browser: true
 args:
   index:
     positional: true
-    type: int
-    default: 1
-    description: 任务索引（从 1 开始）
+    type: string
+    default: "1"
+    description: 任务索引（从 1 开始）或 sessionId
+  session:
+    type: string
+    default: ""
+    description: 指定 sessionId（优先于 index）
 
 columns: [Role, Type, Content]
 
 pipeline:
   - evaluate: |
       (async () => {
-        var index = ${{ args.index }} || 1;
-        var taskList = document.querySelector('[class*="task-items-list"]');
-        if (!taskList) {
-          return [{ Role: 'Error', Type: 'error', Content: '未找到任务列表' }];
-        }
-
-        var tasks = taskList.querySelectorAll(':scope > [class*="task-item"]');
-        if (tasks.length === 0) {
-          return [{ Role: 'Error', Type: 'error', Content: '暂无任务' }];
-        }
-        if (index < 1 || index > tasks.length) {
-          return [{ Role: 'Error', Type: 'error', Content: '任务索引超出范围 (1-' + tasks.length + ')' }];
-        }
-
-        var task = tasks[index - 1];
-        var titleEl = task.querySelector('[class*="task-title"]');
-        var taskTitle = titleEl ? titleEl.innerText.trim() : '未知';
+        var sessionArg = ${{ args.session | json }} || "";
+        var indexRaw = ${{ args.index | json }} || "1";
 
         function getSessionId(el) {
           var fk = Object.keys(el).find(function(k) { return k.startsWith('__reactFiber$'); });
@@ -47,6 +36,41 @@ pipeline:
           return '-';
         }
 
+        var taskList = document.querySelector('[class*="task-items-list"]');
+        if (!taskList) {
+          return [{ Role: 'Error', Type: 'error', Content: '未找到任务列表' }];
+        }
+        var tasks = taskList.querySelectorAll(':scope > [class*="task-item"]');
+        if (tasks.length === 0) {
+          return [{ Role: 'Error', Type: 'error', Content: '暂无任务' }];
+        }
+
+        var index = 0;
+        if (sessionArg) {
+          for (var si = 0; si < tasks.length; si++) {
+            if (getSessionId(tasks[si]) === sessionArg) { index = si + 1; break; }
+          }
+          if (!index) return [{ Role: 'Error', Type: 'error', Content: '未找到 sessionId: ' + sessionArg }];
+        } else {
+          var parsed = parseInt(indexRaw);
+          var isNumeric = !isNaN(parsed) && /^\d+$/.test(indexRaw);
+          if (isNumeric) {
+            index = parsed;
+          } else {
+            for (var si2 = 0; si2 < tasks.length; si2++) {
+              if (getSessionId(tasks[si2]) === indexRaw) { index = si2 + 1; break; }
+            }
+            if (!index) return [{ Role: 'Error', Type: 'error', Content: '未找到 sessionId: ' + indexRaw }];
+          }
+        }
+
+        if (index < 1 || index > tasks.length) {
+          return [{ Role: 'Error', Type: 'error', Content: '任务索引超出范围 (1-' + tasks.length + ')' }];
+        }
+
+        var task = tasks[index - 1];
+        var titleEl = task.querySelector('[class*="task-title"]');
+        var taskTitle = titleEl ? titleEl.innerText.trim() : '未知';
         var chatSessionId = getSessionId(task);
         var isSelected = task.className.indexOf('selected') >= 0;
 

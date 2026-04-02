@@ -9,9 +9,13 @@ timeout_seconds: 30
 args:
   index:
     positional: true
-    type: int
-    default: 0
-    description: 任务索引（从 1 开始，0 表示当前选中的任务）
+    type: string
+    default: "0"
+    description: 任务索引（从 1 开始，0 表示当前选中的任务）或 sessionId
+  session:
+    type: string
+    default: ""
+    description: 指定 sessionId（优先于 index）
   select:
     long: select
     type: int
@@ -28,7 +32,8 @@ columns: [Index, Type, Label, Description, Selected]
 pipeline:
   - evaluate: |
       (async () => {
-        var taskIndex = ${{ args.index }} || 0;
+        var sessionArg = ${{ args.session | json }} || "";
+        var indexRaw = ${{ args.index | json }} || "0";
         var selectId = ${{ args.select }} || 0;
         var inputText = ${{ args.text | json }} || "";
 
@@ -37,14 +42,63 @@ pipeline:
           return (typeof c === 'string') ? c : (c && c.baseVal ? c.baseVal : '');
         }
 
-        if (taskIndex > 0) {
-          var taskList = document.querySelector('[class*="task-items-list"]');
+        function getSessionId(el) {
+          var fk = Object.keys(el).find(function(k) { return k.startsWith('__reactFiber$'); });
+          if (!fk) return '';
+          var cur = el[fk];
+          for (var n = 0; n < 5 && cur; n++) {
+            var p = cur.memoizedProps || {};
+            if (p.session && p.session.sessionId) return p.session.sessionId;
+            cur = cur.return;
+          }
+          return '';
+        }
+
+        var resolvedIndex = 0;
+        var taskList = document.querySelector('[class*="task-items-list"]');
+
+        if (sessionArg) {
           if (!taskList) return [{ Index: '-', Type: 'Error', Label: '未找到任务列表', Description: '', Selected: '' }];
           var tasks = taskList.querySelectorAll(':scope > [class*="task-item"]');
-          if (taskIndex < 1 || taskIndex > tasks.length) {
-            return [{ Index: '-', Type: 'Error', Label: '任务索引超出范围 (1-' + tasks.length + ')', Description: '', Selected: '' }];
+          var found = false;
+          for (var si = 0; si < tasks.length; si++) {
+            if (getSessionId(tasks[si]) === sessionArg) {
+              resolvedIndex = si + 1;
+              found = true;
+              break;
+            }
           }
-          var task = tasks[taskIndex - 1];
+          if (!found) return [{ Index: '-', Type: 'Error', Label: '未找到 sessionId: ' + sessionArg, Description: '', Selected: '' }];
+        } else {
+          var parsed = parseInt(indexRaw);
+          var isNumeric = !isNaN(parsed) && /^\d+$/.test(indexRaw);
+          if (isNumeric) {
+            resolvedIndex = parsed;
+          } else if (indexRaw && indexRaw !== "0") {
+            if (!taskList) return [{ Index: '-', Type: 'Error', Label: '未找到任务列表', Description: '', Selected: '' }];
+            var tasks2 = taskList.querySelectorAll(':scope > [class*="task-item"]');
+            var found2 = false;
+            for (var si2 = 0; si2 < tasks2.length; si2++) {
+              if (getSessionId(tasks2[si2]) === indexRaw) {
+                resolvedIndex = si2 + 1;
+                found2 = true;
+                break;
+              }
+            }
+            if (!found2) return [{ Index: '-', Type: 'Error', Label: '未找到 sessionId: ' + indexRaw, Description: '', Selected: '' }];
+          }
+        }
+
+        var taskIndex = resolvedIndex;
+
+        if (taskIndex > 0) {
+          if (!taskList) taskList = document.querySelector('[class*="task-items-list"]');
+          if (!taskList) return [{ Index: '-', Type: 'Error', Label: '未找到任务列表', Description: '', Selected: '' }];
+          var tasksAll = taskList.querySelectorAll(':scope > [class*="task-item"]');
+          if (taskIndex < 1 || taskIndex > tasksAll.length) {
+            return [{ Index: '-', Type: 'Error', Label: '任务索引超出范围 (1-' + tasksAll.length + ')', Description: '', Selected: '' }];
+          }
+          var task = tasksAll[taskIndex - 1];
           if (cls(task).indexOf('selected') < 0) {
             task.click();
             await new Promise(function(r) { setTimeout(r, 1000); });
