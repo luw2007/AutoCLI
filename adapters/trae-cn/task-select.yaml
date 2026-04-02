@@ -11,13 +11,19 @@ args:
     type: string
     default: "1"
     description: 任务索引（从 1 开始）或 sessionId
+  session:
+    type: string
+    default: ""
+    description: 指定 sessionId（优先于 index）
 
 columns: [Status, Message]
 
 pipeline:
   - evaluate: |
       (async () => {
-        const indexArg = ${{ args.index | json }} || "1";
+        const sessionArg = ${{ args.session | json }} || "";
+        const rawIndex = ${{ args.index | json }} || "1";
+        const indexArg = sessionArg || rawIndex;
         const taskList = document.querySelector('[class*="task-items-list"]');
         
         if (!taskList) {

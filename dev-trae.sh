@@ -93,11 +93,20 @@ auto_detect_endpoint() {
 }
 
 PAGE_IDX=""
+OUTPUT_FORMAT="table"
 ARGS=()
 for arg in "$@"; do
     case "$arg" in
         --page=*) PAGE_IDX="${arg#--page=}" ;;
-        *)        ARGS+=("$arg") ;;
+        --format=*|-f=*) OUTPUT_FORMAT="${arg#*=}" ;;
+        -f) OUTPUT_FORMAT="__next__" ;;
+        *)
+            if [ "$OUTPUT_FORMAT" = "__next__" ]; then
+                OUTPUT_FORMAT="$arg"
+            else
+                ARGS+=("$arg")
+            fi
+            ;;
     esac
 done
 set -- "${ARGS[@]+"${ARGS[@]}"}"
@@ -114,12 +123,45 @@ case "$cmd" in
         if [ -f "$STATE_FILE" ]; then
             active_id=$(cat "$STATE_FILE" | grep -oE '[^/]+$')
         fi
-        echo "Trae CDP Pages (${CDP_BASE}):"
-        echo ""
-        echo "$all_pages" | awk -F'\t' -v active="$active_id" '{
-            mark = ($2 == active) ? " ✦" : "  ";
-            printf "%s[%d] %-40s %s\n", mark, NR, $3, $2
-        }'
+        case "$OUTPUT_FORMAT" in
+            json)
+                echo "$all_pages" | awk -F'\t' -v active="$active_id" 'BEGIN{printf "["} NR>1{printf ","} {
+                    gsub(/"/, "\\\"", $3);
+                    active_flag = ($2 == active) ? "true" : "false";
+                    printf "{\"index\":%d,\"id\":\"%s\",\"title\":\"%s\",\"active\":%s}", NR, $2, $3, active_flag
+                } END{printf "]\n"}'
+                ;;
+            csv)
+                echo "Index,Id,Title,Active"
+                echo "$all_pages" | awk -F'\t' -v active="$active_id" '{
+                    gsub(/"/, "\"\"", $3);
+                    active_flag = ($2 == active) ? "true" : "false";
+                    printf "%d,\"%s\",\"%s\",%s\n", NR, $2, $3, active_flag
+                }'
+                ;;
+            yaml)
+                echo "$all_pages" | awk -F'\t' -v active="$active_id" '{
+                    active_flag = ($2 == active) ? "true" : "false";
+                    printf "- index: %d\n  id: \"%s\"\n  title: \"%s\"\n  active: %s\n", NR, $2, $3, active_flag
+                }'
+                ;;
+            md|markdown)
+                echo "| Index | Title | Id | Active |"
+                echo "|-------|-------|----|--------|"
+                echo "$all_pages" | awk -F'\t' -v active="$active_id" '{
+                    active_flag = ($2 == active) ? "✦" : "";
+                    printf "| %d | %s | %s | %s |\n", NR, $3, $2, active_flag
+                }'
+                ;;
+            *)
+                echo "Trae CDP Pages (${CDP_BASE}):"
+                echo ""
+                echo "$all_pages" | awk -F'\t' -v active="$active_id" '{
+                    mark = ($2 == active) ? " ✦" : "  ";
+                    printf "%s[%d] %-40s %s\n", mark, NR, $3, $2
+                }'
+                ;;
+        esac
         ;;
     use)
         idx="${2:?用法: $0 use <编号>}"
@@ -214,23 +256,127 @@ case "$cmd" in
         echo "使用方法: $0 [--page=N|ID] <command> [args...]"
         echo ""
         echo "全局选项:"
-        echo "  --page=N|ID  - 指定 page 编号或 page-id (优先级: --page > use 持久化 > 默认 1)"
+        echo "  --page=N|ID      - 指定 page 编号或 page-id (优先级: --page > use 持久化 > 默认 1)"
+        echo "  -f, --format=FMT - 输出格式: table(默认), json, yaml, csv, md"
         echo ""
         echo "脚本命令:"
-        echo "  pages        - 列出所有 CDP page"
-        echo "  use <编号>   - 切换到指定 page (持久化)"
-        echo "  reset        - 清除 page 选择"
-        echo "  build        - cargo build"
-        echo "  test         - 测试连接 + 读取"
-        echo "  smoke        - 冒烟测试核心命令"
-        echo "  help         - 显示此帮助"
+        echo "  pages           - 列出所有 CDP page"
+        echo "  use <编号>      - 切换到指定 page (持久化)"
+        echo "  reset           - 清除 page 选择"
+        echo "  build           - cargo build"
+        echo "  test            - 测试连接 + 读取"
+        echo "  smoke           - 冒烟测试核心命令"
+        echo "  init-env        - 方案3: 通过 launchd 设置 ELECTRON_EXTRA_LAUNCH_ARGS 启用 CDP"
+        echo "  init-wrapper    - 方案4: 替换 Electron 二进制为 wrapper 脚本启用 CDP"
+        echo "  help            - 显示此帮助"
         echo ""
         echo "trae-cn 子命令 (自动检测 CDP endpoint，透传所有参数):"
         $BIN trae-cn --help 2>&1 | sed -n '/^Commands:/,/^$/p' | sed 's/^/  /'
         ;;
+    init-env)
+        TRAE_APP="/Applications/Trae CN.app"
+        PLIST_LABEL="com.user.electron-cdp-env"
+        PLIST_PATH="$HOME/Library/LaunchAgents/${PLIST_LABEL}.plist"
+        ENV_KEY="ELECTRON_EXTRA_LAUNCH_ARGS"
+        ENV_VAL="--remote-debugging-port=${CDP_PORT}"
+
+        current=$(launchctl getenv "$ENV_KEY" 2>/dev/null || true)
+        if [ "$current" = "$ENV_VAL" ]; then
+            echo "✅ 环境变量已设置: $ENV_KEY=$ENV_VAL"
+            echo "   无需重复操作"
+            exit 0
+        fi
+
+        launchctl setenv "$ENV_KEY" "$ENV_VAL"
+        echo "✅ 已设置当前会话环境变量: $ENV_KEY=$ENV_VAL"
+
+        cat > "$PLIST_PATH" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${PLIST_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/launchctl</string>
+        <string>setenv</string>
+        <string>${ENV_KEY}</string>
+        <string>${ENV_VAL}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
+PLIST
+
+        launchctl load "$PLIST_PATH" 2>/dev/null || true
+        echo "✅ 已写入 LaunchAgent: $PLIST_PATH"
+        echo "   重启后自动生效"
+        echo ""
+        echo "⚠️  需要完全退出 Trae CN 后重新打开才能生效"
+        echo "   退出: osascript -e 'quit app \"Trae CN\"'"
+        echo "   启动: open \"$TRAE_APP\""
+        ;;
+    init-wrapper)
+        TRAE_APP="/Applications/Trae CN.app"
+        ELECTRON_DIR="${TRAE_APP}/Contents/MacOS"
+        ELECTRON_BIN="${ELECTRON_DIR}/Electron"
+        ELECTRON_ORIG="${ELECTRON_DIR}/Electron.orig"
+
+        if [ ! -d "$TRAE_APP" ]; then
+            echo "❌ 未找到 Trae CN: $TRAE_APP" >&2
+            exit 1
+        fi
+
+        if [ -f "$ELECTRON_ORIG" ]; then
+            file_type=$(file -b "$ELECTRON_ORIG" 2>/dev/null || true)
+            if echo "$file_type" | grep -q "Mach-O"; then
+                echo "ℹ️  Electron.orig 已存在 (Mach-O binary)"
+            else
+                echo "⚠️  Electron.orig 存在但不是 Mach-O binary: $file_type" >&2
+                exit 1
+            fi
+        else
+            file_type=$(file -b "$ELECTRON_BIN" 2>/dev/null || true)
+            if echo "$file_type" | grep -q "Mach-O"; then
+                sudo cp "$ELECTRON_BIN" "$ELECTRON_ORIG"
+                echo "✅ 已备份原始二进制: Electron → Electron.orig"
+            else
+                echo "⚠️  Electron 已是脚本，但找不到 Electron.orig" >&2
+                echo "    当前内容:" >&2
+                head -3 "$ELECTRON_BIN" >&2
+                exit 1
+            fi
+        fi
+
+        WRAPPER='#!/bin/bash
+DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ "$ELECTRON_RUN_AS_NODE" = "1" ]; then
+    exec "$DIR/Electron.orig" "$@"
+else
+    exec "$DIR/Electron.orig" --remote-debugging-port='"${CDP_PORT}"' "$@"
+fi'
+
+        echo "$WRAPPER" | sudo tee "$ELECTRON_BIN" > /dev/null
+        sudo chmod +x "$ELECTRON_BIN"
+        echo "✅ 已写入 wrapper 脚本: $ELECTRON_BIN"
+        echo ""
+        cat "$ELECTRON_BIN"
+        echo ""
+        echo "⚠️  需要完全退出 Trae CN 后重新打开才能生效"
+        echo "   退出: osascript -e 'quit app \"Trae CN\"'"
+        echo "   启动: open \"$TRAE_APP\""
+        echo ""
+        echo "💡 注意: Trae CN 更新后可能覆盖此修改，需重新执行 init-wrapper"
+        ;;
     *)
         auto_detect_endpoint
         shift
-        $BIN trae-cn "$cmd" "$@"
+        if [ "$OUTPUT_FORMAT" != "table" ]; then
+            $BIN trae-cn "$cmd" --format "$OUTPUT_FORMAT" "$@"
+        else
+            $BIN trae-cn "$cmd" "$@"
+        fi
         ;;
 esac

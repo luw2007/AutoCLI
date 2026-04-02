@@ -8,9 +8,13 @@ browser: true
 args:
   index:
     positional: true
-    type: int
-    default: 1
-    description: 任务索引（从 1 开始）
+    type: string
+    default: "1"
+    description: 任务索引（从 1 开始）或 sessionId
+  session:
+    type: string
+    default: ""
+    description: 指定 sessionId（优先于 index）
   interval:
     long: interval
     type: int
@@ -27,9 +31,22 @@ columns: [Time, Role, Content]
 pipeline:
   - evaluate: |
       (async () => {
-        const index = ${{ args.index }} || 1;
+        var sessionArg = ${{ args.session | json }} || "";
+        var indexRaw = ${{ args.index | json }} || "1";
         const interval = ${{ args.interval }} || 2;
         const maxCount = ${{ args.count }} || 10;
+
+        function getSessionId(el) {
+          var fk = Object.keys(el).find(function(k) { return k.startsWith('__reactFiber$'); });
+          if (!fk) return '';
+          var cur = el[fk];
+          for (var n = 0; n < 5 && cur; n++) {
+            var p = cur.memoizedProps || {};
+            if (p.session && p.session.sessionId) return p.session.sessionId;
+            cur = cur.return;
+          }
+          return '';
+        }
 
         const taskList = document.querySelector('[class*="task-items-list"]');
 
@@ -41,6 +58,25 @@ pipeline:
 
         if (tasks.length === 0) {
           return [{ Time: '-', Role: 'Error', Content: '暂无任务' }];
+        }
+
+        var index = 0;
+        if (sessionArg) {
+          for (var si = 0; si < tasks.length; si++) {
+            if (getSessionId(tasks[si]) === sessionArg) { index = si + 1; break; }
+          }
+          if (!index) return [{ Time: '-', Role: 'Error', Content: '未找到 sessionId: ' + sessionArg }];
+        } else {
+          var parsed = parseInt(indexRaw);
+          var isNumeric = !isNaN(parsed) && /^\d+$/.test(indexRaw);
+          if (isNumeric) {
+            index = parsed;
+          } else {
+            for (var si2 = 0; si2 < tasks.length; si2++) {
+              if (getSessionId(tasks[si2]) === indexRaw) { index = si2 + 1; break; }
+            }
+            if (!index) return [{ Time: '-', Role: 'Error', Content: '未找到 sessionId: ' + indexRaw }];
+          }
         }
 
         if (index < 1 || index > tasks.length) {

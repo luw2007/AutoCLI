@@ -11,19 +11,23 @@ args:
     type: string
     required: true
     description: 要发送的文本内容
-  task:
+  index:
     type: string
-    short: t
     default: ""
-    description: 任务编号 (#1, #2)、sessionId 或 "new" 创建新任务
+    description: 任务索引、sessionId 或 "new" 创建新任务
+  session:
+    type: string
+    default: ""
+    description: 指定 sessionId（优先于 index）
 
 columns: [Status, Action, Message]
 
 pipeline:
   - evaluate: |
       (async () => {
-        var text = ${{ args.text | json }};
-        var taskArg = ${{ args.task | json }} || "";
+        var sessionArg = ${{ args.session | json }} || "";
+        var indexArg = ${{ args.index | json }} || "";
+        var taskArg = sessionArg || indexArg;
 
         var results = [];
 
@@ -105,31 +109,64 @@ pipeline:
           }
         }
 
-        await new Promise(function(r) { setTimeout(r, 300); });
-
-        var editor = document.querySelector('.inputarea.monaco-mouse-cursor-text, textarea.inputarea');
-        if (!editor) {
-          return results.concat([{ Status: 'Error', Action: '输入文本', Message: '未找到输入框' }]);
+        for (var w = 0; w < 10; w++) {
+          var ed = document.querySelector('.chat-input-v2-input-box-editable');
+          if (ed) break;
+          await new Promise(function(r) { setTimeout(r, 300); });
+        }
+        if (!ed) {
+          return results.concat([{ Status: 'Error', Action: '输入文本', Message: '等待输入框超时' }]);
         }
 
-        editor.focus();
-        await new Promise(function(r) { setTimeout(r, 100); });
+        ed.focus();
+        var sel = window.getSelection();
+        sel.selectAllChildren(ed);
+        document.execCommand('delete', false, null);
 
-        var nativeInputValueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
-        nativeInputValueSetter.call(editor, text);
-        editor.dispatchEvent(new Event('input', { bubbles: true }));
-        await new Promise(function(r) { setTimeout(r, 200); });
+        return results;
+      })()
 
-        results.push({ Status: 'Success', Action: '输入文本', Message: text.substring(0, 50) + (text.length > 50 ? '...' : '') });
+  - type:
+      selector: ".chat-input-v2-input-box-editable"
+      text: "${{ args.text }}"
 
-        editor.dispatchEvent(new KeyboardEvent('keydown', {
-          key: 'Enter',
-          code: 'Enter',
-          keyCode: 13,
-          bubbles: true
-        }));
-        await new Promise(function(r) { setTimeout(r, 500); });
-        results.push({ Status: 'Success', Action: '发送消息', Message: '已按 Enter 发送' });
+  - evaluate: |
+      (async () => {
+        var text = ${{ args.text | json }};
+        var results = [];
+
+        var editor = document.querySelector('.chat-input-v2-input-box-editable');
+        if (!editor) {
+          return [{ Status: 'Error', Action: '验证', Message: '输入框丢失' }];
+        }
+
+        var content = (editor.textContent || '').trim();
+        if (content.length === 0) {
+          return [{ Status: 'Error', Action: '输入文本', Message: '文本未写入输入框' }];
+        }
+
+        results.push({ Status: 'Success', Action: '输入文本', Message: content.substring(0, 50) + (content.length > 50 ? '...' : '') });
+
+        var sendBtn = document.querySelector('.chat-input-v2-send-button');
+        if (sendBtn) {
+          var disabled = sendBtn.disabled || sendBtn.getAttribute('aria-disabled') === 'true' || sendBtn.classList.contains('disabled');
+          if (disabled) {
+            return results.concat([{ Status: 'Error', Action: '发送消息', Message: '发送按钮处于禁用状态' }]);
+          }
+          sendBtn.click();
+          await new Promise(function(r) { setTimeout(r, 500); });
+          results.push({ Status: 'Success', Action: '发送消息', Message: '已点击发送按钮' });
+        } else {
+          editor.focus();
+          editor.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            bubbles: true
+          }));
+          await new Promise(function(r) { setTimeout(r, 500); });
+          results.push({ Status: 'Success', Action: '发送消息', Message: '已按 Enter 发送' });
+        }
 
         return results;
       })()
