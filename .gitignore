@@ -3,3 +3,17 @@
 /opencli
 test-results*.md
 twitter-downloads/
+
+# Secrets & credentials
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+config.json
+
+# OS
+.DS_Store
+Thumbs.db

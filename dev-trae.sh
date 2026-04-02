@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-OPENCLI_PATH="OPENCLI_PATH_PLACEHOLDER"
-cd ${OPENCLI_PATH}
+OPENCLI_PATH="$(cd "$(dirname "$0")" && pwd)"
+cd "${OPENCLI_PATH}"
 
 CDP_HOST="${OPENCLI_CDP_HOST:-localhost}"
 CDP_PORT="${OPENCLI_CDP_PORT:-9222}"
