@@ -622,6 +622,10 @@ cargo build
  </picture>
 </a>
 
+## 致谢
+
+本项目基于 [OpenCLI](https://github.com/jackwener/opencli)（作者 [jackwener](https://github.com/jackwener)）构建。感谢原始项目为本项目奠定的基础。
+
 ## 许可证
 
 Apache-2.0

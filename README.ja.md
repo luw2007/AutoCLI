@@ -621,6 +621,10 @@ cargo build
  </picture>
 </a>
 
+## 謝辞
+
+本プロジェクトは [OpenCLI](https://github.com/jackwener/opencli)（作者: [jackwener](https://github.com/jackwener)）をベースに構築されています。本プロジェクトを可能にしたオリジナルの成果に感謝いたします。
+
 ## ライセンス
 
 Apache-2.0
