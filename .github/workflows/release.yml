@@ -64,20 +64,20 @@ jobs:
         if: matrix.archive == 'tar.gz'
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../opencli-rs-${{ matrix.target }}.tar.gz opencli-rs
+          tar czf ../../../autocli-${{ matrix.target }}.tar.gz autocli
           cd ../../..
 
       - name: Package (Windows)
         if: matrix.archive == 'zip'
         shell: pwsh
         run: |
-          Compress-Archive -Path target/${{ matrix.target }}/release/opencli-rs.exe -DestinationPath opencli-rs-${{ matrix.target }}.zip
+          Compress-Archive -Path target/${{ matrix.target }}/release/autocli.exe -DestinationPath autocli-${{ matrix.target }}.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: opencli-rs-${{ matrix.target }}
-          path: opencli-rs-${{ matrix.target }}.${{ matrix.archive }}
+          name: autocli-${{ matrix.target }}
+          path: autocli-${{ matrix.target }}.${{ matrix.archive }}
 
   extension:
     name: Build Chrome Extension
@@ -101,13 +101,13 @@ jobs:
       - name: Package extension
         run: |
           cd extension
-          zip -r ../opencli-rs-chrome-extension.zip dist/ icons/ manifest.json
+          zip -r ../autocli-chrome-extension.zip dist/ icons/ manifest.json
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: opencli-rs-chrome-extension
-          path: opencli-rs-chrome-extension.zip
+          name: autocli-chrome-extension
+          path: autocli-chrome-extension.zip
 
   release:
     name: Create Release
@@ -136,7 +136,7 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            artifacts/opencli-rs-*.tar.gz
-            artifacts/opencli-rs-*.zip
-            artifacts/opencli-rs-chrome-extension.zip
+            artifacts/autocli-*.tar.gz
+            artifacts/autocli-*.zip
+            artifacts/autocli-chrome-extension.zip
             artifacts/SHA256SUMS.txt

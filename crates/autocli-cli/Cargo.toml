@@ -1,0 +1,27 @@
+[package]
+name = "autocli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "autocli"
+path = "src/main.rs"
+
+[dependencies]
+autocli-core = { path = "../autocli-core" }
+autocli-pipeline = { path = "../autocli-pipeline" }
+autocli-browser = { path = "../autocli-browser" }
+autocli-output = { path = "../autocli-output" }
+autocli-discovery = { path = "../autocli-discovery" }
+autocli-external = { path = "../autocli-external" }
+autocli-ai = { path = "../autocli-ai" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { version = "4", features = ["derive", "string"] }
+clap_complete = "4"
+colored = "2"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+inquire = "0.7"

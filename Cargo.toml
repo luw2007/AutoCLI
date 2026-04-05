@@ -1,18 +1,18 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/opencli-rs-core",
-    "crates/opencli-rs-pipeline",
-    "crates/opencli-rs-browser",
-    "crates/opencli-rs-output",
-    "crates/opencli-rs-discovery",
-    "crates/opencli-rs-external",
-    "crates/opencli-rs-ai",
-    "crates/opencli-rs-cli",
+    "crates/autocli-core",
+    "crates/autocli-pipeline",
+    "crates/autocli-browser",
+    "crates/autocli-output",
+    "crates/autocli-discovery",
+    "crates/autocli-external",
+    "crates/autocli-ai",
+    "crates/autocli-cli",
 ]
 
 [workspace.package]
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 license = "Apache-2.0"
 

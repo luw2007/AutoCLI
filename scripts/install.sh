@@ -1,12 +1,12 @@
 #!/bin/sh
-# opencli-rs installer — detects OS/Arch and downloads the right binary
-# Usage: curl -fsSL https://raw.githubusercontent.com/nashsu/opencli-rs/main/scripts/install.sh | sh
+# autocli installer — detects OS/Arch and downloads the right binary
+# Usage: curl -fsSL https://raw.githubusercontent.com/nashsu/autocli/main/scripts/install.sh | sh
 
 set -e
 
-REPO="nashsu/opencli-rs"
+REPO="nashsu/autocli"
 INSTALL_DIR="/usr/local/bin"
-BINARY_NAME="opencli-rs"
+BINARY_NAME="autocli"
 
 # Colors
 RED='\033[0;31m'
@@ -83,6 +83,28 @@ else
 fi
 
 chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
+
+# Migrate from .opencli-rs to .autocli
+OLD_CONFIG="$HOME/.opencli-rs"
+NEW_CONFIG="$HOME/.autocli"
+if [ -d "$OLD_CONFIG" ]; then
+    if [ -d "$NEW_CONFIG" ]; then
+        info "Both ~/.opencli-rs and ~/.autocli exist, merging..."
+        cp -rn "$OLD_CONFIG/"* "$NEW_CONFIG/" 2>/dev/null || true
+    else
+        info "Migrating ~/.opencli-rs to ~/.autocli..."
+        cp -r "$OLD_CONFIG" "$NEW_CONFIG"
+    fi
+    rm -rf "$OLD_CONFIG"
+    success "✓ Migrated config from ~/.opencli-rs to ~/.autocli"
+fi
+
+# Remove old binary if exists
+if command -v "opencli-rs" >/dev/null 2>&1; then
+    OLD_BIN=$(command -v "opencli-rs")
+    info "Removing old binary: ${OLD_BIN}"
+    rm -f "$OLD_BIN" 2>/dev/null || sudo rm -f "$OLD_BIN" 2>/dev/null || true
+fi
 
 # Verify
 if command -v "$BINARY_NAME" >/dev/null 2>&1; then

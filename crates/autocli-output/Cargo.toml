@@ -1,0 +1,13 @@
+[package]
+name = "autocli-output"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+autocli-core = { path = "../autocli-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+comfy-table = "7"
+colored = "2"
+csv = "1"

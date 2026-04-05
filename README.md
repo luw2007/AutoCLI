@@ -1,8 +1,8 @@
-# opencli-rs
+# autocli
 **[English](README.md) | [中文](README.zh.md) | [日本語](README.ja.md)**
 
 <p align="center">
-  <img src="title_screen.png" alt="opencli-rs" width="800" />
+  <img src="title_screen.png" alt="autocli" width="800" />
 </p>
 
 <p align="center">
@@ -16,12 +16,12 @@ Blazing fast, memory-safe command-line tool — **Fetch information from any web
 A **complete rewrite in pure Rust** based on [OpenCLI](https://github.com/jackwener/opencli) (TypeScript). Feature-equivalent, **up to 12x faster**, **10x less memory**, **single 4.7MB binary**, zero runtime dependencies.
 
 **The perfect companion for OpenClaw/Agent** — Give your AI Agent the ability to reach information across the entire web, fetching real-time data from 55+ sites with a single command.
-**Built for AI Agents:** Configure `opencli-rs list` in `AGENT.md` or `.cursorrules`, and AI can automatically discover all available tools. Register your local CLI (`opencli-rs register mycli`), and AI can seamlessly invoke all your tools.
+**Built for AI Agents:** Configure `autocli list` in `AGENT.md` or `.cursorrules`, and AI can automatically discover all available tools. Register your local CLI (`autocli register mycli`), and AI can seamlessly invoke all your tools.
 
 
 ## 🚀 Performance Comparison
 
-| Metric | 🦀 opencli-rs (Rust) | 📦 opencli (Node.js) | Improvement |
+| Metric | 🦀 autocli (Rust) | 📦 opencli (Node.js) | Improvement |
 |------|:-----------------:|:-----------------:|:----:|
 | 💾 **Memory Usage (Public Commands)** | 15 MB | 99 MB | **6.6x** |
 | 💾 **Memory Usage (Browser Commands)** | 9 MB | 95 MB | **10.6x** |
@@ -31,7 +31,7 @@ A **complete rewrite in pure Rust** based on [OpenCLI](https://github.com/jackwe
 
 **⚡ Real-world Command Timing Comparison:**
 
-| Command | 🦀 opencli-rs | 📦 opencli | Speedup |
+| Command | 🦀 autocli | 📦 opencli | Speedup |
 |------|:----------:|:-------:|:------:|
 | `bilibili hot` | **1.66s** | 20.1s | 🔥 **12x** |
 | `zhihu hot` | **1.77s** | 20.5s | 🔥 **11.6x** |
@@ -58,7 +58,7 @@ A **complete rewrite in pure Rust** based on [OpenCLI](https://github.com/jackwe
 ### One-line Install Script (macOS / Linux)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nashsu/opencli-rs/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/nashsu/autocli/main/scripts/install.sh | sh
 ```
 
 Automatically detects your system and architecture, downloads the corresponding binary, and installs to `/usr/local/bin/`.
@@ -66,33 +66,33 @@ Automatically detects your system and architecture, downloads the corresponding 
 ### Windows (PowerShell)
 
 ```powershell
-Invoke-WebRequest -Uri "https://github.com/nashsu/opencli-rs/releases/latest/download/opencli-rs-x86_64-pc-windows-msvc.zip" -OutFile opencli-rs.zip
-Expand-Archive opencli-rs.zip -DestinationPath .
-Move-Item opencli-rs.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\"
+Invoke-WebRequest -Uri "https://github.com/nashsu/autocli/releases/latest/download/autocli-x86_64-pc-windows-msvc.zip" -OutFile autocli.zip
+Expand-Archive autocli.zip -DestinationPath .
+Move-Item autocli.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\"
 ```
 
 
 ### Manual Download (Simplest)
 
-Download the file for your platform from [GitHub Releases](https://github.com/nashsu/opencli-rs/releases/latest):
+Download the file for your platform from [GitHub Releases](https://github.com/nashsu/autocli/releases/latest):
 
 | Platform | File |
 |------|------|
-| macOS (Apple Silicon) | `opencli-rs-aarch64-apple-darwin.tar.gz` |
-| macOS (Intel) | `opencli-rs-x86_64-apple-darwin.tar.gz` |
-| Linux (x86_64) | `opencli-rs-x86_64-unknown-linux-musl.tar.gz` |
-| Linux (ARM64) | `opencli-rs-aarch64-unknown-linux-musl.tar.gz` |
-| Windows (x64) | `opencli-rs-x86_64-pc-windows-msvc.zip` |
+| macOS (Apple Silicon) | `autocli-aarch64-apple-darwin.tar.gz` |
+| macOS (Intel) | `autocli-x86_64-apple-darwin.tar.gz` |
+| Linux (x86_64) | `autocli-x86_64-unknown-linux-musl.tar.gz` |
+| Linux (ARM64) | `autocli-aarch64-unknown-linux-musl.tar.gz` |
+| Windows (x64) | `autocli-x86_64-pc-windows-msvc.zip` |
 
-After extracting, place `opencli-rs` (or `opencli-rs.exe` on Windows) in your system PATH.
+After extracting, place `autocli` (or `autocli.exe` on Windows) in your system PATH.
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/nashsu/opencli-rs.git
-cd opencli-rs
+git clone https://github.com/nashsu/autocli.git
+cd autocli
 cargo build --release
-cp target/release/opencli-rs /usr/local/bin/   # macOS / Linux
+cp target/release/autocli /usr/local/bin/   # macOS / Linux
 ```
 
 ### Update
@@ -101,51 +101,51 @@ Simply re-run the install command or download the latest release to overwrite th
 
 ### Chrome Extension Setup (required for browser commands)
 
-1. Download `opencli-rs-chrome-extension.zip` from [GitHub Releases](https://github.com/nashsu/opencli-rs/releases/latest)
+1. Download `autocli-chrome-extension.zip` from [GitHub Releases](https://github.com/nashsu/autocli/releases/latest)
 2. Extract to any directory
 3. Open Chrome and go to `chrome://extensions`
 4. Enable "Developer mode" (top right toggle)
 5. Click "Load unpacked" and select the extracted folder
-6. The extension will automatically connect to the opencli-rs daemon
+6. The extension will automatically connect to the autocli daemon
 
 > Public mode commands (hackernews, devto, lobsters, etc.) work without the extension.
 
 ## Skill Install
 
-One-click install opencli-rs skill for your AI Agent:
+One-click install autocli skill for your AI Agent:
 
 ```bash
-npx skills add https://github.com/nashsu/opencli-rs-skill
+npx skills add https://github.com/nashsu/autocli-skill
 ```
 
 ## Quick Start
 
 ```bash
 # View all available commands
-opencli-rs --help
+autocli --help
 
 # View commands for a specific site
-opencli-rs hackernews --help
+autocli hackernews --help
 
 # Get Hacker News top stories (public API, no browser needed)
-opencli-rs hackernews top --limit 10
+autocli hackernews top --limit 10
 
 # JSON format output
-opencli-rs hackernews top --limit 5 --format json
+autocli hackernews top --limit 5 --format json
 
 # Get Bilibili trending videos (requires browser + Cookie)
-opencli-rs bilibili hot --limit 20
+autocli bilibili hot --limit 20
 
 # Search Twitter (requires browser + login)
-opencli-rs twitter search "rust lang" --limit 10
+autocli twitter search "rust lang" --limit 10
 
 # Run diagnostics
-opencli-rs doctor
+autocli doctor
 
 # Generate shell completions
-opencli-rs completion bash >> ~/.bashrc
-opencli-rs completion zsh >> ~/.zshrc
-opencli-rs completion fish > ~/.config/fish/completions/opencli-rs.fish
+autocli completion bash >> ~/.bashrc
+autocli completion zsh >> ~/.zshrc
+autocli completion fish > ~/.config/fish/completions/autocli.fish
 ```
 
 ## AI Commands
@@ -155,23 +155,23 @@ opencli-rs completion fish > ~/.config/fish/completions/opencli-rs.fish
 ### Step 1: Authenticate
 
 ```bash
-opencli-rs auth
+autocli auth
 ```
 
 This will:
 1. Open your browser to [https://autocli.ai/get-token](https://autocli.ai/get-token)
 2. Prompt you to enter the token
 3. Verify the token with the server
-4. Save it to `~/.opencli-rs/config.json`
+4. Save it to `~/.autocli/config.json`
 
 ### Step 2: Generate Adapter with AI
 
 ```bash
 # AI analyzes the page and generates a working adapter
-opencli-rs generate https://www.moltbook.com/ --goal 'list' --ai
+autocli generate https://www.moltbook.com/ --goal 'list' --ai
 
 # Search for products
-opencli-rs generate https://www.amazon.com/ --goal 'search' --ai
+autocli generate https://www.amazon.com/ --goal 'search' --ai
 ```
 
 **How it works:**
@@ -190,10 +190,10 @@ opencli-rs generate https://www.amazon.com/ --goal 'search' --ai
 
 ```bash
 # Search by URL
-opencli-rs search https://www.example.com
+autocli search https://www.example.com
 
 # Domain name also works (auto-prepends https://)
-opencli-rs search example.com
+autocli search example.com
 ```
 
 Searches [autocli.ai](https://autocli.ai) for community-shared adapters matching the URL. Select one from the interactive list to download and save it locally — ready to use immediately.
@@ -206,7 +206,7 @@ Searches [autocli.ai](https://autocli.ai) for community-shared adapters matching
 
 ## Built-in Commands
 
-Run `opencli-rs --help` to see all available commands.
+Run `autocli --help` to see all available commands.
 
 | Site | Commands | Mode |
 |------|------|------|
@@ -276,20 +276,20 @@ Two approaches to auto-generate adapters:
 
 ```bash
 # 🤖 AI-powered (recommended): LLM analyzes page and generates adapter
-opencli-rs generate https://www.example.com --goal hot --ai
+autocli generate https://www.example.com --goal hot --ai
 # Searches autocli.ai for existing adapters first, then generates with AI if needed
 
 # 🔧 Rule-based: heuristic analysis without AI
-opencli-rs generate https://www.example.com --goal hot
+autocli generate https://www.example.com --goal hot
 
 # Explore website API surface (endpoints, framework, stores)
-opencli-rs explore https://www.example.com --site mysite
+autocli explore https://www.example.com --site mysite
 
 # With interactive fuzzing (click buttons to trigger hidden APIs)
-opencli-rs explore https://www.example.com --auto --click "Comments,CC"
+autocli explore https://www.example.com --auto --click "Comments,CC"
 
 # Auto-detect authentication strategy (PUBLIC → COOKIE → HEADER)
-opencli-rs cascade https://api.example.com/hot
+autocli cascade https://api.example.com/hot
 ```
 
 **Discovery features:**
@@ -305,17 +305,17 @@ Download media and articles from supported sites:
 
 ```bash
 # Download Bilibili video (requires yt-dlp)
-opencli-rs bilibili download BV1xxx --output ./videos --quality 1080p
+autocli bilibili download BV1xxx --output ./videos --quality 1080p
 
 # Download Zhihu article as Markdown with images
-opencli-rs zhihu download "https://zhuanlan.zhihu.com/p/xxx" --output ./articles
+autocli zhihu download "https://zhuanlan.zhihu.com/p/xxx" --output ./articles
 
 # Download WeChat article as Markdown with images
-opencli-rs weixin download "https://mp.weixin.qq.com/s/xxx" --output ./articles
+autocli weixin download "https://mp.weixin.qq.com/s/xxx" --output ./articles
 
 # Download Twitter/X media (images + videos)
-opencli-rs twitter download nash_su --limit 10 --output ./twitter
-opencli-rs twitter download --tweet-url "https://x.com/user/status/123" --output ./twitter
+autocli twitter download nash_su --limit 10 --output ./twitter
+autocli twitter download --tweet-url "https://x.com/user/status/123" --output ./twitter
 ```
 
 **Download features:**
@@ -339,10 +339,10 @@ Integrated external tools (passthrough execution):
 
 ```bash
 # Passthrough to GitHub CLI
-opencli-rs gh repo list
+autocli gh repo list
 
 # Passthrough to kubectl
-opencli-rs kubectl get pods
+autocli kubectl get pods
 ```
 
 ## Output Formats
@@ -350,11 +350,11 @@ opencli-rs kubectl get pods
 Switch output format via the `--format` global flag:
 
 ```bash
-opencli-rs hackernews top --format table    # ASCII table (default)
-opencli-rs hackernews top --format json     # JSON
-opencli-rs hackernews top --format yaml     # YAML
-opencli-rs hackernews top --format csv      # CSV
-opencli-rs hackernews top --format md       # Markdown table
+autocli hackernews top --format table    # ASCII table (default)
+autocli hackernews top --format json     # JSON
+autocli hackernews top --format yaml     # YAML
+autocli hackernews top --format csv      # CSV
+autocli hackernews top --format md       # Markdown table
 ```
 
 ## Authentication Strategies
@@ -371,10 +371,10 @@ Each command uses a different authentication strategy:
 
 ## Custom Adapters
 
-Add custom adapters by creating YAML files under `~/.opencli-rs/adapters/`:
+Add custom adapters by creating YAML files under `~/.autocli/adapters/`:
 
 ```yaml
-# ~/.opencli-rs/adapters/mysite/hot.yaml
+# ~/.autocli/adapters/mysite/hot.yaml
 site: mysite
 name: hot
 description: My site hot posts
@@ -469,16 +469,16 @@ Pipelines use the `${{ expression }}` syntax:
 
 | Path | Description |
 |------|------|
-| `~/.opencli-rs/adapters/` | User custom adapters |
-| `~/.opencli-rs/plugins/` | User plugins |
-| `~/.opencli-rs/external-clis.yaml` | User external CLI registry |
+| `~/.autocli/adapters/` | User custom adapters |
+| `~/.autocli/plugins/` | User plugins |
+| `~/.autocli/external-clis.yaml` | User external CLI registry |
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                       User / AI Agent                           │
-│                     opencli-rs <site> <command>                  │
+│                     autocli <site> <command>                  │
 └─────────────────────┬───────────────────────────────────────────┘
                       │
                       ▼
@@ -523,16 +523,16 @@ Pipelines use the `${{ expression }}` syntax:
 ### Workspace Structure
 
 ```
-opencli-rs/
+autocli/
 ├── crates/
-│   ├── opencli-rs-core/        # Core data models: Strategy, CliCommand, Registry, IPage trait, Error
-│   ├── opencli-rs-pipeline/    # Pipeline engine: pest expressions, executor, 14 step types
-│   ├── opencli-rs-browser/     # Browser bridge: Daemon, DaemonPage, CdpPage, DOM helpers
-│   ├── opencli-rs-output/      # Output rendering: table, json, yaml, csv, markdown
-│   ├── opencli-rs-discovery/   # Adapter discovery: YAML parsing, build.rs compile-time embedding
-│   ├── opencli-rs-external/    # External CLI: loading, detection, passthrough execution
-│   ├── opencli-rs-ai/          # AI capabilities: explore, synthesize, cascade, generate
-│   └── opencli-rs-cli/         # CLI entry point: clap, execution orchestration, doctor, completion
+│   ├── autocli-core/        # Core data models: Strategy, CliCommand, Registry, IPage trait, Error
+│   ├── autocli-pipeline/    # Pipeline engine: pest expressions, executor, 14 step types
+│   ├── autocli-browser/     # Browser bridge: Daemon, DaemonPage, CdpPage, DOM helpers
+│   ├── autocli-output/      # Output rendering: table, json, yaml, csv, markdown
+│   ├── autocli-discovery/   # Adapter discovery: YAML parsing, build.rs compile-time embedding
+│   ├── autocli-external/    # External CLI: loading, detection, passthrough execution
+│   ├── autocli-ai/          # AI capabilities: explore, synthesize, cascade, generate
+│   └── autocli-cli/         # CLI entry point: clap, execution orchestration, doctor, completion
 ├── adapters/                   # 333 YAML adapter definitions
 │   ├── hackernews/
 │   ├── bilibili/
@@ -544,7 +544,7 @@ opencli-rs/
 
 ### Improvements over the TypeScript Original
 
-| Improvement | Original (TypeScript) | opencli-rs (Rust) |
+| Improvement | Original (TypeScript) | autocli (Rust) |
 |--------|-------------------|-------------------|
 | Distribution | Node.js + npm install (~100MB) | Single binary (4.1MB) |
 | Startup speed | Read manifest JSON → parse → register | Compile-time embedding, zero file I/O |
@@ -613,11 +613,11 @@ cargo build
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=nashsu%2Fopencli-rs&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=nashsu%2Fautocli&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=nashsu/opencli-rs&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=nashsu/opencli-rs&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=nashsu/opencli-rs&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=nashsu/autocli&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=nashsu/autocli&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=nashsu/autocli&type=date&legend=top-left" />
  </picture>
 </a>
 

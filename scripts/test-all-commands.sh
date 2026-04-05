@@ -1,31 +1,31 @@
 #!/bin/bash
-# Automated test script for opencli-rs and opencli
+# Automated test script for autocli and opencli
 # Tests all Public and Browser mode commands, records results
 # Usage:
-#   ./scripts/test-all-commands.sh              # test opencli-rs (default)
+#   ./scripts/test-all-commands.sh              # test autocli (default)
 #   ./scripts/test-all-commands.sh opencli      # test original opencli
 #   ./scripts/test-all-commands.sh both         # test both side by side
 
 set -o pipefail
 
 # Parse argument
-TEST_MODE="${1:-opencli-rs}"
+TEST_MODE="${1:-autocli}"
 
 case "$TEST_MODE" in
-    opencli-rs|rs)
-        BINARIES=("./target/release/opencli-rs")
-        LABELS=("opencli-rs")
+    autocli|rs)
+        BINARIES=("./target/release/autocli")
+        LABELS=("autocli")
         ;;
     opencli|original)
         BINARIES=("opencli")
         LABELS=("opencli")
         ;;
     both|compare)
-        BINARIES=("./target/release/opencli-rs" "opencli")
-        LABELS=("opencli-rs" "opencli")
+        BINARIES=("./target/release/autocli" "opencli")
+        LABELS=("autocli" "opencli")
         ;;
     *)
-        echo "Usage: $0 [opencli-rs|opencli|both]"
+        echo "Usage: $0 [autocli|opencli|both]"
         exit 1
         ;;
 esac
@@ -83,13 +83,13 @@ done
 if [ ${#BINARIES[@]} -gt 1 ]; then
     COMPARE_REPORT="test-results-compare.md"
     cat > "$COMPARE_REPORT" << 'HEADER'
-# opencli-rs vs opencli Comparison Report
+# autocli vs opencli Comparison Report
 
 > Generated at: TIMESTAMP
 
 ## Results
 
-| Site | Command | Mode | opencli-rs | opencli | Match? |
+| Site | Command | Mode | autocli | opencli | Match? |
 |------|---------|------|------------|---------|--------|
 HEADER
     sed -i '' "s/TIMESTAMP/$(date '+%Y-%m-%d %H:%M:%S')/" "$COMPARE_REPORT"
@@ -324,11 +324,11 @@ echo ""
 echo "── BROWSER MODE ──"
 echo ""
 
-# Check if daemon is running (try opencli-rs first, then opencli)
+# Check if daemon is running (try autocli first, then opencli)
 if ! curl -s http://127.0.0.1:19825/health > /dev/null 2>&1; then
     echo "⚠️  Daemon not running. Starting daemon..."
-    if [ -f "./target/release/opencli-rs" ]; then
-        ./target/release/opencli-rs --daemon &
+    if [ -f "./target/release/autocli" ]; then
+        ./target/release/autocli --daemon &
     else
         opencli --daemon 2>/dev/null &
     fi

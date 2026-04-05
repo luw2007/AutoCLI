@@ -1,9 +1,9 @@
-# opencli-rs
+# autocli
 
 **[English](README.md) | [中文](README.zh.md) | [日本語](README.ja.md)**
 
 <p align="center">
-  <img src="title_screen.png" alt="opencli-rs" width="800" />
+  <img src="title_screen.png" alt="autocli" width="800" />
 </p>
 
 <p align="center">
@@ -17,12 +17,12 @@
 [OpenCLI](https://github.com/jackwener/opencli)（TypeScript）を **純 Rust で完全リライト**。機能は同等で、**最大12倍高速**、**メモリ使用量1/10**、**単一ファイル 4.7MB**、ランタイム依存ゼロ。
 
 **OpenClaw/Agent の最良のパートナー** —— AI Agent にウェブ全体の情報にアクセスする能力を与え、1コマンドで55以上のサイトのリアルタイムデータを取得。
-**AI Agentのために設計：** `AGENT.md` や `.cursorrules` に `opencli-rs list` を設定すれば、AI が利用可能な全ツールを自動的に発見できます。ローカル CLI を登録（`opencli-rs register mycli`）すれば、AI があなたの全ツールを完璧に呼び出せます。
+**AI Agentのために設計：** `AGENT.md` や `.cursorrules` に `autocli list` を設定すれば、AI が利用可能な全ツールを自動的に発見できます。ローカル CLI を登録（`autocli register mycli`）すれば、AI があなたの全ツールを完璧に呼び出せます。
 
 
 ## 🚀 パフォーマンス比較
 
-| 指標 | 🦀 opencli-rs (Rust) | 📦 opencli (Node.js) | 改善 |
+| 指標 | 🦀 autocli (Rust) | 📦 opencli (Node.js) | 改善 |
 |------|:-----------------:|:-----------------:|:----:|
 | 💾 **メモリ使用量 (Public コマンド)** | 15 MB | 99 MB | **6.6x** |
 | 💾 **メモリ使用量 (Browser コマンド)** | 9 MB | 95 MB | **10.6x** |
@@ -32,7 +32,7 @@
 
 **⚡ 実測コマンド所要時間比較：**
 
-| コマンド | 🦀 opencli-rs | 📦 opencli | 高速化倍率 |
+| コマンド | 🦀 autocli | 📦 opencli | 高速化倍率 |
 |------|:----------:|:-------:|:------:|
 | `bilibili hot` | **1.66s** | 20.1s | 🔥 **12x** |
 | `zhihu hot` | **1.77s** | 20.5s | 🔥 **11.6x** |
@@ -59,7 +59,7 @@
 ### ワンライナーインストールスクリプト（macOS / Linux）
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nashsu/opencli-rs/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/nashsu/autocli/main/scripts/install.sh | sh
 ```
 
 システムとアーキテクチャを自動検出し、対応するバイナリをダウンロードして `/usr/local/bin/` にインストールします。
@@ -67,33 +67,33 @@ curl -fsSL https://raw.githubusercontent.com/nashsu/opencli-rs/main/scripts/inst
 ### Windows (PowerShell)
 
 ```powershell
-Invoke-WebRequest -Uri "https://github.com/nashsu/opencli-rs/releases/latest/download/opencli-rs-x86_64-pc-windows-msvc.zip" -OutFile opencli-rs.zip
-Expand-Archive opencli-rs.zip -DestinationPath .
-Move-Item opencli-rs.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\"
+Invoke-WebRequest -Uri "https://github.com/nashsu/autocli/releases/latest/download/autocli-x86_64-pc-windows-msvc.zip" -OutFile autocli.zip
+Expand-Archive autocli.zip -DestinationPath .
+Move-Item autocli.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\"
 ```
 
 
 ### 手動ダウンロード（最も簡単）
 
-[GitHub Releases](https://github.com/nashsu/opencli-rs/releases/latest) から対応プラットフォームのファイルをダウンロード：
+[GitHub Releases](https://github.com/nashsu/autocli/releases/latest) から対応プラットフォームのファイルをダウンロード：
 
 | プラットフォーム | ファイル |
 |------|------|
-| macOS (Apple Silicon) | `opencli-rs-aarch64-apple-darwin.tar.gz` |
-| macOS (Intel) | `opencli-rs-x86_64-apple-darwin.tar.gz` |
-| Linux (x86_64) | `opencli-rs-x86_64-unknown-linux-musl.tar.gz` |
-| Linux (ARM64) | `opencli-rs-aarch64-unknown-linux-musl.tar.gz` |
-| Windows (x64) | `opencli-rs-x86_64-pc-windows-msvc.zip` |
+| macOS (Apple Silicon) | `autocli-aarch64-apple-darwin.tar.gz` |
+| macOS (Intel) | `autocli-x86_64-apple-darwin.tar.gz` |
+| Linux (x86_64) | `autocli-x86_64-unknown-linux-musl.tar.gz` |
+| Linux (ARM64) | `autocli-aarch64-unknown-linux-musl.tar.gz` |
+| Windows (x64) | `autocli-x86_64-pc-windows-msvc.zip` |
 
-解凍後、`opencli-rs`（Windows は `opencli-rs.exe`）をシステム PATH に配置してください。
+解凍後、`autocli`（Windows は `autocli.exe`）をシステム PATH に配置してください。
 
 ### ソースからビルド
 
 ```bash
-git clone https://github.com/nashsu/opencli-rs.git
-cd opencli-rs
+git clone https://github.com/nashsu/autocli.git
+cd autocli
 cargo build --release
-cp target/release/opencli-rs /usr/local/bin/   # macOS / Linux
+cp target/release/autocli /usr/local/bin/   # macOS / Linux
 ```
 
 ### アップデート
@@ -102,51 +102,51 @@ cp target/release/opencli-rs /usr/local/bin/   # macOS / Linux
 
 ### Chrome 拡張機能のインストール（ブラウザコマンドに必要）
 
-1. [GitHub Releases](https://github.com/nashsu/opencli-rs/releases/latest) から `opencli-rs-chrome-extension.zip` をダウンロード
+1. [GitHub Releases](https://github.com/nashsu/autocli/releases/latest) から `autocli-chrome-extension.zip` をダウンロード
 2. 任意のディレクトリに解凍
 3. Chrome を開き、`chrome://extensions` にアクセス
 4. 右上の「デベロッパーモード」を有効化
 5. 「パッケージ化されていない拡張機能を読み込む」をクリックし、解凍したフォルダを選択
-6. 拡張機能は自動的に opencli-rs daemon に接続されます
+6. 拡張機能は自動的に autocli daemon に接続されます
 
 > Public モードのコマンド（hackernews、devto、lobsters など）は拡張機能なしで使用できます。
 
 ## Skill インストール
 
-ワンクリックで AI Agent に opencli-rs skill をインストール：
+ワンクリックで AI Agent に autocli skill をインストール：
 
 ```bash
-npx skills add https://github.com/nashsu/opencli-rs-skill
+npx skills add https://github.com/nashsu/autocli-skill
 ```
 
 ## クイックスタート
 
 ```bash
 # 利用可能な全コマンドを表示
-opencli-rs --help
+autocli --help
 
 # 特定サイトのコマンドを表示
-opencli-rs hackernews --help
+autocli hackernews --help
 
 # Hacker News の人気記事を取得（公開 API、ブラウザ不要）
-opencli-rs hackernews top --limit 10
+autocli hackernews top --limit 10
 
 # JSON 形式で出力
-opencli-rs hackernews top --limit 5 --format json
+autocli hackernews top --limit 5 --format json
 
 # Bilibili の人気動画を取得（ブラウザ + Cookie が必要）
-opencli-rs bilibili hot --limit 20
+autocli bilibili hot --limit 20
 
 # Twitter を検索（ブラウザ + ログインが必要）
-opencli-rs twitter search "rust lang" --limit 10
+autocli twitter search "rust lang" --limit 10
 
 # 診断を実行
-opencli-rs doctor
+autocli doctor
 
 # シェル補完を生成
-opencli-rs completion bash >> ~/.bashrc
-opencli-rs completion zsh >> ~/.zshrc
-opencli-rs completion fish > ~/.config/fish/completions/opencli-rs.fish
+autocli completion bash >> ~/.bashrc
+autocli completion zsh >> ~/.zshrc
+autocli completion fish > ~/.config/fish/completions/autocli.fish
 ```
 
 ## AI コマンド
@@ -156,23 +156,23 @@ opencli-rs completion fish > ~/.config/fish/completions/opencli-rs.fish
 ### ステップ 1：認証
 
 ```bash
-opencli-rs auth
+autocli auth
 ```
 
 実行すると：
 1. ブラウザで [https://autocli.ai/get-token](https://autocli.ai/get-token) を自動的に開く
 2. トークンの入力を求める
 3. サーバーでトークンを検証
-4. `~/.opencli-rs/config.json` に保存
+4. `~/.autocli/config.json` に保存
 
 ### ステップ 2：AI でアダプターを生成
 
 ```bash
 # AI がページを分析し、動作するアダプターを生成
-opencli-rs generate https://www.example.com --goal hot --ai
+autocli generate https://www.example.com --goal hot --ai
 
 # 商品検索
-opencli-rs generate https://www.amazon.com/s?k=rust --goal search --ai
+autocli generate https://www.amazon.com/s?k=rust --goal search --ai
 ```
 
 **仕組み：**
@@ -191,10 +191,10 @@ opencli-rs generate https://www.amazon.com/s?k=rust --goal search --ai
 
 ```bash
 # URL で検索
-opencli-rs search https://www.example.com
+autocli search https://www.example.com
 
 # ドメイン名でもOK（自動的に https:// を補完）
-opencli-rs search example.com
+autocli search example.com
 ```
 
 [autocli.ai](https://autocli.ai) でコミュニティ共有アダプターを検索。インタラクティブリストから選択すると、自動的にダウンロードしてローカルに保存 — すぐに使用可能。
@@ -207,7 +207,7 @@ opencli-rs search example.com
 
 ## 組み込みコマンド
 
-`opencli-rs --help` を実行して利用可能な全コマンドを確認できます。
+`autocli --help` を実行して利用可能な全コマンドを確認できます。
 
 | サイト | コマンド | モード |
 |------|------|------|
@@ -277,20 +277,20 @@ opencli-rs search example.com
 
 ```bash
 # 🤖 AI 駆動（推奨）：LLM がページを分析しアダプターを生成
-opencli-rs generate https://www.example.com --goal hot --ai
+autocli generate https://www.example.com --goal hot --ai
 # autocli.ai で既存アダプターを先に検索し、見つからなければ AI で生成
 
 # 🔧 ルールベース：AI なしのヒューリスティック分析
-opencli-rs generate https://www.example.com --goal hot
+autocli generate https://www.example.com --goal hot
 
 # Web サイトの API を探索（エンドポイント、フレームワーク、Store）
-opencli-rs explore https://www.example.com --site mysite
+autocli explore https://www.example.com --site mysite
 
 # インタラクティブファジング（ボタンクリックで隠し API を発見）
-opencli-rs explore https://www.example.com --auto --click "コメント,字幕"
+autocli explore https://www.example.com --auto --click "コメント,字幕"
 
 # 認証ストラテジー自動検出（PUBLIC → COOKIE → HEADER）
-opencli-rs cascade https://api.example.com/hot
+autocli cascade https://api.example.com/hot
 ```
 
 **ディスカバリー機能：**
@@ -306,16 +306,16 @@ opencli-rs cascade https://api.example.com/hot
 
 ```bash
 # Bilibili 動画ダウンロード（yt-dlp が必要）
-opencli-rs bilibili download BV1xxx --output ./videos --quality 1080p
+autocli bilibili download BV1xxx --output ./videos --quality 1080p
 
 # 知乎記事を Markdown でダウンロード（画像付き）
-opencli-rs zhihu download "https://zhuanlan.zhihu.com/p/xxx" --output ./articles
+autocli zhihu download "https://zhuanlan.zhihu.com/p/xxx" --output ./articles
 
 # WeChat 公式アカウント記事を Markdown でダウンロード（画像付き）
-opencli-rs weixin download "https://mp.weixin.qq.com/s/xxx" --output ./articles
+autocli weixin download "https://mp.weixin.qq.com/s/xxx" --output ./articles
 
 # Twitter/X メディアダウンロード（画像 + 動画）
-opencli-rs twitter download nash_su --limit 10 --output ./twitter
+autocli twitter download nash_su --limit 10 --output ./twitter
 ```
 
 **ダウンロード機能：**
@@ -338,10 +338,10 @@ opencli-rs twitter download nash_su --limit 10 --output ./twitter
 
 ```bash
 # GitHub CLI にパススルー
-opencli-rs gh repo list
+autocli gh repo list
 
 # kubectl にパススルー
-opencli-rs kubectl get pods
+autocli kubectl get pods
 ```
 
 ## 出力フォーマット
@@ -349,11 +349,11 @@ opencli-rs kubectl get pods
 `--format` グローバルパラメータで出力フォーマットを切り替え：
 
 ```bash
-opencli-rs hackernews top --format table    # ASCII テーブル（デフォルト）
-opencli-rs hackernews top --format json     # JSON
-opencli-rs hackernews top --format yaml     # YAML
-opencli-rs hackernews top --format csv      # CSV
-opencli-rs hackernews top --format md       # Markdown テーブル
+autocli hackernews top --format table    # ASCII テーブル（デフォルト）
+autocli hackernews top --format json     # JSON
+autocli hackernews top --format yaml     # YAML
+autocli hackernews top --format csv      # CSV
+autocli hackernews top --format md       # Markdown テーブル
 ```
 
 ## 認証ストラテジー
@@ -370,10 +370,10 @@ opencli-rs hackernews top --format md       # Markdown テーブル
 
 ## カスタムアダプター
 
-`~/.opencli-rs/adapters/` に YAML ファイルを作成するだけでカスタムアダプターを追加できます：
+`~/.autocli/adapters/` に YAML ファイルを作成するだけでカスタムアダプターを追加できます：
 
 ```yaml
-# ~/.opencli-rs/adapters/mysite/hot.yaml
+# ~/.autocli/adapters/mysite/hot.yaml
 site: mysite
 name: hot
 description: My site hot posts
@@ -468,16 +468,16 @@ Pipeline では `${{ expression }}` 構文を使用します：
 
 | パス | 説明 |
 |------|------|
-| `~/.opencli-rs/adapters/` | ユーザーカスタムアダプター |
-| `~/.opencli-rs/plugins/` | ユーザープラグイン |
-| `~/.opencli-rs/external-clis.yaml` | ユーザー外部 CLI レジストリ |
+| `~/.autocli/adapters/` | ユーザーカスタムアダプター |
+| `~/.autocli/plugins/` | ユーザープラグイン |
+| `~/.autocli/external-clis.yaml` | ユーザー外部 CLI レジストリ |
 
 ## アーキテクチャ
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                      ユーザー / AI Agent                         │
-│                     opencli-rs <site> <command>                  │
+│                     autocli <site> <command>                  │
 └─────────────────────┬───────────────────────────────────────────┘
                       │
                       ▼
@@ -522,16 +522,16 @@ Pipeline では `${{ expression }}` 構文を使用します：
 ### Workspace 構造
 
 ```
-opencli-rs/
+autocli/
 ├── crates/
-│   ├── opencli-rs-core/        # コアデータモデル：Strategy, CliCommand, Registry, IPage trait, Error
-│   ├── opencli-rs-pipeline/    # Pipeline エンジン：pest 式, 実行器, 14種のステップ
-│   ├── opencli-rs-browser/     # ブラウザブリッジ：Daemon, DaemonPage, CdpPage, DOM ヘルパー
-│   ├── opencli-rs-output/      # 出力レンダリング：table, json, yaml, csv, markdown
-│   ├── opencli-rs-discovery/   # アダプター発見：YAML パース, build.rs コンパイル時埋め込み
-│   ├── opencli-rs-external/    # 外部 CLI：読み込み, 検出, パススルー実行
-│   ├── opencli-rs-ai/          # AI 機能：explore, synthesize, cascade, generate
-│   └── opencli-rs-cli/         # CLI エントリポイント：clap, 実行オーケストレーション, doctor, completion
+│   ├── autocli-core/        # コアデータモデル：Strategy, CliCommand, Registry, IPage trait, Error
+│   ├── autocli-pipeline/    # Pipeline エンジン：pest 式, 実行器, 14種のステップ
+│   ├── autocli-browser/     # ブラウザブリッジ：Daemon, DaemonPage, CdpPage, DOM ヘルパー
+│   ├── autocli-output/      # 出力レンダリング：table, json, yaml, csv, markdown
+│   ├── autocli-discovery/   # アダプター発見：YAML パース, build.rs コンパイル時埋め込み
+│   ├── autocli-external/    # 外部 CLI：読み込み, 検出, パススルー実行
+│   ├── autocli-ai/          # AI 機能：explore, synthesize, cascade, generate
+│   └── autocli-cli/         # CLI エントリポイント：clap, 実行オーケストレーション, doctor, completion
 ├── adapters/                   # 333個の YAML アダプター定義
 │   ├── hackernews/
 │   ├── bilibili/
@@ -543,7 +543,7 @@ opencli-rs/
 
 ### TypeScript 版からの改善点
 
-| 改善項目 | 原版 (TypeScript) | opencli-rs (Rust) |
+| 改善項目 | 原版 (TypeScript) | autocli (Rust) |
 |--------|-------------------|-------------------|
 | 配布方式 | Node.js + npm install (~100MB) | 単一バイナリ (4.1MB) |
 | 起動速度 | manifest JSON 読み込み → パース → 登録 | コンパイル時埋め込み、ファイル I/O ゼロ |
@@ -612,11 +612,11 @@ cargo build
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=nashsu%2Fopencli-rs&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=nashsu%2Fautocli&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=nashsu/opencli-rs&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=nashsu/opencli-rs&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=nashsu/opencli-rs&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=nashsu/autocli&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=nashsu/autocli&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=nashsu/autocli&type=date&legend=top-left" />
  </picture>
 </a>
 

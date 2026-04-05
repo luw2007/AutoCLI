@@ -85,6 +85,135 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
+name = "autocli"
+version = "0.2.3"
+dependencies = [
+ "autocli-ai",
+ "autocli-browser",
+ "autocli-core",
+ "autocli-discovery",
+ "autocli-external",
+ "autocli-output",
+ "autocli-pipeline",
+ "clap",
+ "clap_complete",
+ "colored",
+ "inquire",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "autocli-ai"
+version = "0.2.3"
+dependencies = [
+ "async-trait",
+ "autocli-browser",
+ "autocli-core",
+ "autocli-pipeline",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
+ "urlencoding",
+]
+
+[[package]]
+name = "autocli-browser"
+version = "0.2.3"
+dependencies = [
+ "async-trait",
+ "autocli-core",
+ "axum",
+ "futures",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-tungstenite 0.24.0",
+ "tower-http",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "autocli-core"
+version = "0.2.3"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "autocli-discovery"
+version = "0.2.3"
+dependencies = [
+ "autocli-core",
+ "autocli-pipeline",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "autocli-external"
+version = "0.2.3"
+dependencies = [
+ "autocli-core",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "autocli-output"
+version = "0.2.3"
+dependencies = [
+ "autocli-core",
+ "colored",
+ "comfy-table",
+ "csv",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+]
+
+[[package]]
+name = "autocli-pipeline"
+version = "0.2.3"
+dependencies = [
+ "async-trait",
+ "autocli-core",
+ "base64",
+ "futures",
+ "pest",
+ "pest_derive",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "axum"
 version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1035,134 +1164,6 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
-
-[[package]]
-name = "opencli-rs"
-version = "0.2.2"
-dependencies = [
- "clap",
- "clap_complete",
- "colored",
- "inquire",
- "opencli-rs-ai",
- "opencli-rs-browser",
- "opencli-rs-core",
- "opencli-rs-discovery",
- "opencli-rs-external",
- "opencli-rs-output",
- "opencli-rs-pipeline",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "opencli-rs-ai"
-version = "0.2.2"
-dependencies = [
- "async-trait",
- "opencli-rs-browser",
- "opencli-rs-core",
- "opencli-rs-pipeline",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "url",
- "urlencoding",
-]
-
-[[package]]
-name = "opencli-rs-browser"
-version = "0.2.2"
-dependencies = [
- "async-trait",
- "axum",
- "futures",
- "opencli-rs-core",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-tungstenite 0.24.0",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "opencli-rs-core"
-version = "0.2.2"
-dependencies = [
- "async-trait",
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "opencli-rs-discovery"
-version = "0.2.2"
-dependencies = [
- "opencli-rs-core",
- "opencli-rs-pipeline",
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "opencli-rs-external"
-version = "0.2.2"
-dependencies = [
- "opencli-rs-core",
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "opencli-rs-output"
-version = "0.2.2"
-dependencies = [
- "colored",
- "comfy-table",
- "csv",
- "opencli-rs-core",
- "serde",
- "serde_json",
- "serde_yaml",
-]
-
-[[package]]
-name = "opencli-rs-pipeline"
-version = "0.2.2"
-dependencies = [
- "async-trait",
- "base64",
- "futures",
- "opencli-rs-core",
- "pest",
- "pest_derive",
- "reqwest",
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
 
 [[package]]
 name = "parking_lot"
