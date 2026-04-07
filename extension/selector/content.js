@@ -39,6 +39,7 @@
   let activeEntryId = null;
   let entries = [];
   let entryIdCounter = 0;
+  let generatedDone = false; // true after successful generate, reset on entry changes
   const COLORS = ['#ff571a','#4ecdc4','#45b7d1','#ffd93d','#a29bfe','#fd79a8','#96ceb4','#ff8a5c','#88d8b0','#c9b1ff'];
 
   // ─── Shrink page ──────────────────────────────────────────────
@@ -63,6 +64,7 @@
       .panel {
         width:${PANEL_WIDTH}px; height:100vh; background:#fbfbfb;
         border-left:1px solid #e2e2e2; display:flex; flex-direction:column;
+        position:relative;
         font-family:'Satoshi',-apple-system,sans-serif; font-size:13px; color:#0f1112;
         -webkit-font-smoothing:antialiased;
       }
@@ -99,7 +101,13 @@
       .icon-btn:hover { border-color:#ff571a; color:#0f1112; }
 
       /* Body */
-      .body { padding:12px 16px; flex:1; overflow-y:auto; }
+      .body { padding:12px 16px; flex:1; overflow-y:auto; padding-bottom:60px; }
+
+      /* Footer — sticky generate button */
+      .footer {
+        position:absolute; bottom:0; left:0; right:0;
+        padding:10px 16px; background:#fff; border-top:1px solid #e2e2e2;
+      }
 
       /* Top bar */
       .top-bar { display:flex; gap:6px; margin-bottom:12px; }
@@ -167,15 +175,24 @@
       .entry-body { padding:8px 12px; border-top:1px solid #f2f2f2; }
       .entry-sel {
         background:#0f1112; color:#e0e0e0;
-        font:11px/1.5 'JetBrains Mono',monospace;
-        padding:6px 8px; word-break:break-all; cursor:pointer;
+        font:10px/1.4 'JetBrains Mono',monospace;
+        padding:4px 8px; cursor:pointer;
         transition:background 0.15s;
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
       }
       .entry-sel:hover { background:#1a1c1e; }
       .entry-sample {
-        font-size:10px; color:#aaabab; margin-top:4px; line-height:1.3;
+        font-size:11px; color:#5d5f5f; margin-top:6px; line-height:1.5;
         font-family:'JetBrains Mono',monospace;
+        white-space:pre-line;
       }
+      .entry-save-bar { padding:8px 12px; border-top:1px solid #f2f2f2; }
+      .btn-entry-save {
+        width:100%; padding:6px; background:#00cc66; color:#fff;
+        border:1px solid #00cc66; font-size:11px; font-weight:600;
+        cursor:pointer; font-family:'Satoshi',sans-serif;
+      }
+      .btn-entry-save:hover { opacity:0.88; }
 
       /* Empty state */
       .empty {
@@ -209,7 +226,7 @@
         100% { background-position:-200% 0; }
       }
       .btn-generate {
-        width:100%; padding:8px; margin-top:10px;
+        width:100%; padding:8px;
         background:#ff571a; color:#fff; border:1px solid #ff571a;
         font-size:12px; font-weight:600; cursor:pointer;
         font-family:'Satoshi',sans-serif; letter-spacing:0.3px;
@@ -228,35 +245,88 @@
         padding:6px 8px; margin-top:8px; height:56px; overflow:hidden;
         white-space:pre; border:1px solid #333; position:relative;
       }
-      .generate-stream.active { border-color:#ff571a; color:#aaabab; animation:gen-pulse 2s ease infinite; }
+      .generate-stream.active { border-color:#ff571a; color:#aaabab; }
       .generate-stream::after {
         content:''; position:absolute; bottom:0; left:0; right:0; height:16px;
         background:linear-gradient(transparent, #0f1112);
       }
-      .generate-summary {
-        margin-top:8px; border:1px solid #e2e2e2; background:#fff; padding:10px 12px;
+      @keyframes sum-appear {
+        0% { opacity:0; transform:translateY(8px); }
+        100% { opacity:1; transform:translateY(0); }
       }
-      .summary-row { display:flex; gap:6px; margin-bottom:4px; font-size:11px; }
-      .summary-label { color:#aaabab; min-width:60px; font-family:'JetBrains Mono',monospace; }
-      .summary-value { color:#0f1112; font-weight:500; }
-      .summary-usage {
-        font-size:10px; font-weight:600; text-transform:uppercase; color:#888;
+      .generate-summary {
+        margin-top:8px; border:1px solid #e2e2e2; background:#fff; padding:12px 14px;
+        animation:sum-appear 0.4s cubic-bezier(0.22,1,0.36,1);
+      }
+      .sum-title {
+        font-size:15px; font-weight:700; color:#0f1112; letter-spacing:-0.3px;
+        font-family:'JetBrains Mono',monospace;
+      }
+      .sum-title .sep { color:#e2e2e2; font-weight:300; margin:0 4px; }
+      .sum-desc { font-size:11px; color:#5d5f5f; margin-top:2px; line-height:1.4; }
+      .sum-meta { display:flex; gap:4px; flex-wrap:wrap; margin-top:8px; align-items:center; }
+      .sum-meta-label { font-size:10px; color:#aaabab; font-family:'JetBrains Mono',monospace; margin-right:2px; }
+      .sum-tag {
+        display:inline-flex; align-items:center; padding:2px 7px;
+        font-size:10px; font-weight:500; font-family:'JetBrains Mono',monospace;
+        border:1px solid #f2f2f2; color:#5d5f5f; background:#f0f1f1;
+      }
+      .sum-tag.accent { color:#ff571a; border-color:rgba(255,87,26,0.2); background:rgba(255,87,26,0.04); }
+      .sum-section-title {
+        font-size:10px; font-weight:600; text-transform:uppercase; color:#aaabab;
         margin-top:10px; margin-bottom:4px; letter-spacing:0.5px;
       }
-      .summary-cmd {
+      .sum-columns { display:flex; gap:4px; flex-wrap:wrap; }
+      .sum-col {
+        display:inline-flex; padding:3px 8px;
+        font-size:10px; font-weight:600; font-family:'JetBrains Mono',monospace;
+        background:#0f1112; color:#e0e0e0;
+      }
+      .sum-cmd {
         display:flex; align-items:center;
-        background:#0f1112; color:#e0e0e0; padding:8px 10px;
+        background:#0f1112; color:#e0e0e0; padding:8px 10px; margin-top:4px;
         font:12px/1.4 'JetBrains Mono',monospace; cursor:pointer;
       }
-      .summary-cmd:hover { background:#1a1c1e; }
-      .summary-cmd-text { flex:1; }
-      .summary-cmd-copy {
+      .sum-cmd:hover { background:#1a1c1e; }
+      .sum-cmd-text { flex:1; }
+      .sum-cmd .arg { color:#ff571a; }
+      .sum-cmd-copy {
         flex-shrink:0; color:#5d5f5f; font-size:10px;
         padding:2px 6px; border:1px solid #333;
         font-family:'JetBrains Mono',monospace;
       }
-      .summary-cmd-copy:hover { color:#fff; border-color:#5d5f5f; }
-      .generate-error { color:#ff571a; font-size:11px; margin-top:6px; }
+      .sum-cmd-copy:hover { color:#fff; border-color:#5d5f5f; }
+      .sum-link {
+        display:block; text-align:center; margin-top:8px;
+        font-size:10px; color:#aaabab; text-decoration:none;
+        font-family:'JetBrains Mono',monospace;
+      }
+      .sum-link:hover { color:#ff571a; }
+      .sum-synced {
+        text-align:center; margin-top:8px; padding-top:8px;
+        border-top:1px solid #f2f2f2;
+        font-size:10px; color:#aaabab; font-family:'JetBrains Mono',monospace;
+      }
+      .sum-synced .check { color:#00cc66; }
+      .generate-error {
+        font-size:11px; margin-bottom:8px; padding:8px 10px;
+        border:1px solid #ff571a; background:rgba(255,87,26,0.04);
+        color:#ff571a; font-family:'JetBrains Mono',monospace;
+        line-height:1.4; word-break:break-all;
+      }
+      .gen-ratelimit {
+        border:1px solid #ffd93d; background:#fffdf5; padding:10px 12px; margin-bottom:8px;
+      }
+      .gen-rl-header { display:flex; align-items:center; gap:6px; }
+      .gen-rl-bar { width:3px; height:14px; background:#ffd93d; flex-shrink:0; }
+      .gen-rl-title { font-size:12px; font-weight:700; color:#0f1112; letter-spacing:-0.2px; }
+      .gen-rl-msg { font-size:10px; color:#5d5f5f; margin-top:6px; line-height:1.5; font-family:'JetBrains Mono',monospace; }
+      .gen-rl-link {
+        display:block; margin-top:6px; padding-top:6px; border-top:1px solid #f2f2f2;
+        font-size:10px; color:#aaabab; text-decoration:none; text-align:center;
+        font-family:'JetBrains Mono',monospace;
+      }
+      .gen-rl-link:hover { color:#ff571a; }
 
       /* Toast */
       .toast {
@@ -283,13 +353,13 @@
           <div class="empty" id="s-empty">No entries yet</div>
         </div>
         <div id="s-sec-export" style="display:none;"></div>
-        <div class="section" id="s-sec-generate" style="display:none;">
-          <button class="btn-generate" id="s-generate">Generate Adapter with AI</button>
-          <div class="generate-stream" id="s-gen-stream" style="display:none;"></div>
-          <div class="generate-summary" id="s-gen-summary" style="display:none;"></div>
-          <div class="generate-error" id="s-gen-error" style="display:none;"></div>
-        </div>
-        <div class="help"><b>ESC</b> stop picking · click selector to copy</div>
+        <div class="generate-stream" id="s-gen-stream" style="display:none;"></div>
+        <div class="generate-summary" id="s-gen-summary" style="display:none;"></div>
+      </div>
+      <div class="footer" id="s-sec-generate">
+        <div class="generate-error" id="s-gen-error" style="display:none;"></div>
+        <div class="gen-ratelimit" id="s-gen-rl" style="display:none;"></div>
+        <button class="btn-generate" id="s-generate" disabled>Generate Adapter with AI</button>
       </div>
       <div class="toast" id="s-toast">copied</div>
     </div>
@@ -306,6 +376,7 @@
   const genStream = q('s-gen-stream');
   const genSummary = q('s-gen-summary');
   const genError = q('s-gen-error');
+  const genRateLimit = q('s-gen-rl');
 
   function setStatus(h, t) { statusEl.innerHTML = h; statusEl.className = 'status'+(t?' '+t:''); }
   function showToast(t) { toastEl.textContent=t||'copied'; toastEl.style.display='block'; setTimeout(()=>toastEl.style.display='none',1000); }
@@ -352,6 +423,7 @@
   function getEntry(id) { return entries.find(e=>e.id===id); }
 
   function createEntry(name) {
+    resetGenerated();
     const id = ++entryIdCounter;
     const color = COLORS[(id-1)%COLORS.length];
     entries.push({ id, name:name||`entry_${id}`, elements:[], selector:'', matchCount:0, color, saved:false, sample:'' });
@@ -360,6 +432,7 @@
   }
 
   function deleteEntry(id) {
+    resetGenerated();
     clearForEntry(id);
     entries = entries.filter(e=>e.id!==id);
     if (activeEntryId===id) { activeEntryId=null; mode='idle'; hideHover(); }
@@ -379,6 +452,7 @@
   const snapshots = new Map(); // entryId -> { name, elements[], selector, matchCount, sample }
 
   function editEntry(id) {
+    resetGenerated();
     const e = getEntry(id);
     if (!e) return;
     // Save snapshot before editing
@@ -440,7 +514,12 @@
       }
     } else { entry.selector=''; entry.matchCount=0; }
 
-    entry.sample = entry.elements[0] ? entry.elements[0].textContent.trim().substring(0,50) : '';
+    // Collect sample lines from matched elements
+    const sampleLines = entry.elements.slice(0, 3).map(el => {
+      return el.textContent.trim().replace(/\s+/g, ' ').substring(0, 60);
+    }).filter(Boolean);
+    if (entry.matchCount > 3) sampleLines.push('…');
+    entry.sample = sampleLines.join('\n');
     setStatus(`<b>${esc(entry.name)}</b> — ${entry.matchCount} matched`, 'success');
     render(); updateExport();
   }
@@ -524,12 +603,7 @@
           b.addEventListener('click', e => { e.stopPropagation(); activateEntry(entry.id); });
           actions.appendChild(b);
         }
-        if (entry.selector) {
-          const b = document.createElement('button');
-          b.className = 'btn btn-sm btn-save'; b.textContent = 'Save';
-          b.addEventListener('click', e => { e.stopPropagation(); saveEntry(entry.id); });
-          actions.appendChild(b);
-        }
+        // Save button moved to entry bottom
         if (snapshots.has(entry.id)) {
           const b = document.createElement('button');
           b.className = 'btn btn-sm btn-danger'; b.textContent = 'Discard';
@@ -553,7 +627,7 @@
         const sel = document.createElement('div');
         sel.className = 'entry-sel';
         sel.textContent = entry.selector;
-        sel.title = 'Click to copy';
+        sel.title = 'Click to copy full selector';
         sel.addEventListener('click', () => copyText(entry.selector));
         body.appendChild(sel);
         if (entry.sample) {
@@ -563,35 +637,64 @@
           body.appendChild(s);
         }
         card.appendChild(body);
+
+        // Save button at bottom (only for unsaved entries with selector)
+        if (!entry.saved) {
+          const saveBar = document.createElement('div');
+          saveBar.className = 'entry-save-bar';
+          const saveBtn = document.createElement('button');
+          saveBtn.className = 'btn-entry-save';
+          saveBtn.textContent = 'Save';
+          saveBtn.addEventListener('click', e => { e.stopPropagation(); saveEntry(entry.id); });
+          saveBar.appendChild(saveBtn);
+          card.appendChild(saveBar);
+        }
       }
       entriesEl.appendChild(card);
     });
+    updateGenButton();
   }
 
   // ─── Export ────────────────────────────────────────────────────
   function updateExport() {
-    const saved = entries.filter(e=>e.selector);
-    if (!saved.length) {
+    const withSelector = entries.filter(e=>e.selector);
+    if (!withSelector.length) {
       window.__autocliSelectorExport = null;
       exportSection.style.display = 'none';
-      genSection.style.display = 'none';
+      updateGenButton();
       return;
     }
     const data = {
       url: location.href,
       title: document.title,
-      entries: saved.map(e=>({ name:e.name, selector:e.selector, matchCount:e.matchCount, saved:e.saved, sample:e.sample||'' })),
+      entries: withSelector.map(e=>({ name:e.name, selector:e.selector, matchCount:e.matchCount, saved:e.saved, sample:e.sample||'' })),
     };
     window.__autocliSelectorExport = data;
     exportSection.style.display = 'none';
-    genSection.style.display = 'block';
+    updateGenButton();
+  }
+
+  function updateGenButton() {
+    if (generatedDone) {
+      genBtn.disabled = true;
+      genBtn.textContent = 'Done';
+      genBtn.classList.remove('loading');
+      return;
+    }
+    const hasSaved = entries.some(e => e.saved && e.selector);
+    const hasUnsaved = entries.some(e => !e.saved && e.selector);
+    genBtn.disabled = !hasSaved || hasUnsaved;
+    genBtn.textContent = 'Generate Adapter with AI';
+  }
+
+  function resetGenerated() {
+    generatedDone = false;
+    updateGenButton();
   }
 
   // ─── Panel buttons ────────────────────────────────────────────
   q('s-add').addEventListener('click', () => {
-    const name = prompt('Entry name:');
-    if (name===null) return;
-    createEntry(name.trim());
+    createEntry('');
   });
 
   // Blocks button removed from UI
@@ -616,6 +719,7 @@
     genStream.classList.add('active');
     genSummary.style.display = 'none';
     genError.style.display = 'none';
+    genRateLimit.style.display = 'none';
 
     (async () => {
     try {
@@ -632,7 +736,7 @@
         domTree = document.documentElement.outerHTML.substring(0, 30000);
       }
 
-      genBtn.textContent = 'Generating...';
+      genBtn.textContent = 'Analyzing...';
 
       // Step 2: Build request
       const capturedData = {
@@ -651,7 +755,25 @@
 
       if (!resp.ok) {
         const errText = await resp.text();
-        throw new Error(`${resp.status}: ${errText.substring(0, 200)}`);
+        if (resp.status === 429) {
+          // Rate limit — show friendly card
+          let msg = errText;
+          try {
+            const parsed = JSON.parse(errText);
+            msg = parsed.error?.message || parsed.detail || errText;
+          } catch(e) {}
+          const isZh = navigator.language.startsWith('zh');
+          genStream.classList.remove('active');
+          genStream.style.display = 'none';
+          genRateLimit.style.display = 'block';
+          genRateLimit.innerHTML = `
+            <div class="gen-rl-header"><span class="gen-rl-bar"></span><span class="gen-rl-title">${isZh ? '已达到使用限制' : 'Limit Reached'}</span></div>
+            <div class="gen-rl-msg">${esc(msg)}</div>
+            <a class="gen-rl-link" href="https://www.autocli.ai" target="_blank">${isZh ? '前往 autocli.ai 了解更多 →' : 'Learn more at autocli.ai →'}</a>
+          `;
+          return;
+        }
+        throw new Error(`${resp.status}: ${errText}`);
       }
 
       // Step 3: Read SSE stream — show last 3 lines only
@@ -720,23 +842,37 @@
       const argHints = argNames.filter(a => a !== 'limit').map(a => `<${a}>`).join(' ');
       const cmd = `autocli ${site} ${cmdName}${argHints ? ' ' + argHints : ''}`;
 
+      // Build columns tags
+      const colTags = columns ? columns.split(',').map(c => `<span class="sum-col">${esc(c.trim())}</span>`).join('') : '';
+
+      // Build command with colored args
+      const cmdHtml = `autocli ${esc(site)} ${esc(cmdName)}` +
+        (argNames.filter(a => a !== 'limit').length ?
+          argNames.filter(a => a !== 'limit').map(a => ` <span class="arg">&lt;${esc(a)}&gt;</span>`).join('') : '');
+
       genSummary.style.display = 'block';
       genSummary.innerHTML = `
-        <div class="summary-row"><span class="summary-label">site</span><span class="summary-value">${esc(site)}</span></div>
-        <div class="summary-row"><span class="summary-label">name</span><span class="summary-value">${esc(cmdName)}</span></div>
-        ${description ? `<div class="summary-row"><span class="summary-label">desc</span><span class="summary-value">${esc(description)}</span></div>` : ''}
-        ${domain ? `<div class="summary-row"><span class="summary-label">domain</span><span class="summary-value">${esc(domain)}</span></div>` : ''}
-        ${columns ? `<div class="summary-row"><span class="summary-label">columns</span><span class="summary-value">${esc(columns)}</span></div>` : ''}
-        ${tags ? `<div class="summary-row"><span class="summary-label">tags</span><span class="summary-value">${esc(tags)}</span></div>` : ''}
-        ${argNames.length ? `<div class="summary-row"><span class="summary-label">args</span><span class="summary-value">${esc(argNames.join(', '))}</span></div>` : ''}
-        <div class="summary-usage">Usage</div>
-        <div class="summary-cmd" title="Click to copy">
-          <span class="summary-cmd-text">${esc(cmd)}</span>
-          <span class="summary-cmd-copy">copy</span>
+        <div class="sum-title">${esc(site)}<span class="sep">/</span>${esc(cmdName)}</div>
+        ${description ? `<div class="sum-desc">${esc(description)}</div>` : ''}
+        ${domain ? `<div class="sum-meta"><span class="sum-tag accent">${esc(domain)}</span></div>` : ''}
+        ${colTags ? `
+          <div class="sum-section-title">Columns</div>
+          <div class="sum-columns">${colTags}</div>
+        ` : ''}
+        <div class="sum-section-title">Usage</div>
+        <div class="sum-cmd" title="Click to copy">
+          <span class="sum-cmd-text">${cmdHtml}</span>
+          <span class="sum-cmd-copy">copy</span>
         </div>
+        <a class="sum-link" href="https://www.autocli.ai" target="_blank">View on autocli.ai →</a>
+        <div class="sum-synced"><span class="check">✓</span> ${navigator.language.startsWith('zh') ? '配置已同步保存到本地和云端，可直接使用' : 'Saved locally & synced to cloud. Ready to use.'}</div>
       `;
 
-      genSummary.querySelector('.summary-cmd')?.addEventListener('click', () => copyText(cmd));
+      genSummary.querySelector('.sum-cmd')?.addEventListener('click', () => copyText(cmd));
+
+      // Mark as done
+      generatedDone = true;
+      updateGenButton();
 
     } catch(e) {
       genStream.classList.remove('active');
@@ -744,8 +880,10 @@
       genError.textContent = e.message;
       genError.style.display = 'block';
     } finally {
-      genBtn.disabled = false;
-      genBtn.textContent = 'Generate Adapter with AI';
+      if (!generatedDone) {
+        genBtn.disabled = false;
+        genBtn.textContent = 'Generate Adapter with AI';
+      }
       genBtn.classList.remove('loading');
     }
     })();
