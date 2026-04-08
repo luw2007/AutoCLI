@@ -1,6 +1,6 @@
 site: trae-cn
 name: task-new
-description: 创建新任务
+description: 创建新任务（支持文本和图片）
 domain: localhost
 strategy: ui
 browser: true
@@ -12,6 +12,11 @@ args:
     required: false
     default: ""
     description: 任务标题（可选，留空则只点击新建按钮）
+  image:
+    type: string
+    required: false
+    default: ""
+    description: 图片文件路径（本地路径，支持 png/jpg/gif/webp）
 
 columns: [Status, Message]
 
@@ -19,6 +24,8 @@ pipeline:
   - evaluate: |
       (async () => {
         var title = ${{ args.title | json }} || "";
+        var imageB64 = ${{ args.image | base64_file | json }} || "";
+        var imagePath = ${{ args.image | json }} || "";
 
         var newTaskBtn = document.querySelector('[class*="new-task-button"]');
         if (!newTaskBtn) {
@@ -28,7 +35,7 @@ pipeline:
         newTaskBtn.click();
         await new Promise(function(r) { setTimeout(r, 1000); });
 
-        if (!title) {
+        if (!title && !imageB64) {
           return [{ Status: 'Success', Message: '已打开新任务对话' }];
         }
 
@@ -45,8 +52,33 @@ pipeline:
         document.execCommand('delete', false, null);
         await new Promise(function(r) { setTimeout(r, 50); });
 
-        document.execCommand('insertText', false, title);
-        await new Promise(function(r) { setTimeout(r, 200); });
+        if (imageB64) {
+          var ext = (imagePath.split('.').pop() || 'png').toLowerCase();
+          var mimeMap = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml' };
+          var mime = mimeMap[ext] || 'image/png';
+
+          var raw = atob(imageB64);
+          var arr = new Uint8Array(raw.length);
+          for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+          var blob = new Blob([arr], { type: mime });
+          var file = new File([blob], 'image.' + ext, { type: mime, lastModified: Date.now() });
+
+          var dt = new DataTransfer();
+          dt.items.add(file);
+
+          var pasteEvent = new ClipboardEvent('paste', {
+            clipboardData: dt,
+            bubbles: true,
+            cancelable: true,
+          });
+          chatInput.dispatchEvent(pasteEvent);
+          await new Promise(function(r) { setTimeout(r, 1500); });
+        }
+
+        if (title) {
+          document.execCommand('insertText', false, title);
+          await new Promise(function(r) { setTimeout(r, 200); });
+        }
 
         var sendBtn = document.querySelector('.chat-input-v2-send-button');
         if (sendBtn) {
@@ -54,5 +86,8 @@ pipeline:
           await new Promise(function(r) { setTimeout(r, 500); });
         }
 
-        return [{ Status: 'Success', Message: '已创建新任务: ' + title }];
+        var parts = [];
+        if (title) parts.push(title);
+        if (imageB64) parts.push('[图片: ' + imagePath.split('/').pop() + ']');
+        return [{ Status: 'Success', Message: '已创建新任务: ' + parts.join(' ') }];
       })()

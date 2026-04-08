@@ -1,3 +1,6 @@
+use std::path::Path;
+
+use base64::Engine;
 use serde_json::Value;
 
 use autocli_core::CliError;
@@ -36,6 +39,7 @@ pub fn apply_filter(
         "reverse" => filter_reverse(input),
         "unique" => filter_unique(input),
         "split" => filter_split(input, args),
+        "base64_file" => filter_base64_file(input),
         _ => Err(CliError::pipeline(format!("Unknown filter: {name}"))),
     }
 }
@@ -400,4 +404,22 @@ fn filter_split(input: Value, args: &[Value]) -> Result<Value, CliError> {
         }
         other => other,
     })
+}
+
+fn filter_base64_file(input: Value) -> Result<Value, CliError> {
+    let path_str = match &input {
+        Value::String(s) if !s.is_empty() => s.clone(),
+        _ => return Ok(Value::String(String::new())),
+    };
+    let path = Path::new(&path_str);
+    if !path.exists() {
+        return Err(CliError::pipeline(format!(
+            "base64_file: file not found: {path_str}"
+        )));
+    }
+    let bytes = std::fs::read(path).map_err(|e| {
+        CliError::pipeline(format!("base64_file: failed to read {path_str}: {e}"))
+    })?;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(Value::String(encoded))
 }
