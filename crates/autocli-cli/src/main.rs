@@ -70,7 +70,7 @@ fn build_cli(registry: &Registry, external_clis: &[ExternalCli]) -> Command {
             for arg_def in &cmd.args {
                 let is_bool = matches!(
                     arg_def.arg_type,
-                    opencli_rs_core::ArgType::Bool | opencli_rs_core::ArgType::Boolean
+                    autocli_core::ArgType::Bool | autocli_core::ArgType::Boolean
                 );
                 let mut arg = if arg_def.positional {
                     Arg::new(arg_def.name.clone())
@@ -1093,7 +1093,7 @@ async fn main() {
                 for arg_def in &cmd.args {
                     let is_bool = matches!(
                         arg_def.arg_type,
-                        opencli_rs_core::ArgType::Bool | opencli_rs_core::ArgType::Boolean
+                        autocli_core::ArgType::Bool | autocli_core::ArgType::Boolean
                     );
                     if is_bool && !arg_def.positional {
                         let flag_val = cmd_matches.get_flag(&arg_def.name);

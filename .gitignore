@@ -17,3 +17,7 @@ config.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Agent skills & cache
+.agents/
+.trae/

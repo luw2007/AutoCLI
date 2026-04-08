@@ -77,12 +77,12 @@ pub fn render(data: &Value, opts: &RenderOptions) -> String {
     let cols = opts.columns.as_deref();
 
     let mut output = match opts.format {
-        OutputFormat::Table => render_table(data, cols),
-        OutputFormat::Json => render_json(data, cols),
-        OutputFormat::Yaml => render_yaml(data, cols),
-        OutputFormat::Csv => render_csv(data, cols),
-        OutputFormat::Markdown => render_markdown(data, cols),
-        OutputFormat::Html => render_html(data, cols),
+        OutputFormat::Table => render_table(&data, cols),
+        OutputFormat::Json => render_json(&data, cols),
+        OutputFormat::Yaml => render_yaml(&data, cols),
+        OutputFormat::Csv => render_csv(&data, cols),
+        OutputFormat::Markdown => render_markdown(&data, cols),
+        OutputFormat::Html => render_html(&data, cols),
     };
 
     if let Some(title) = &opts.title {
