@@ -27,7 +27,7 @@ args:
     default: ""
     description: 为选中的选项输入文本内容（配合 --select 使用）
 
-columns: [Index, Type, Label, Description, Selected]
+columns: [Index, Type, Step, Label, Description, Selected]
 
 pipeline:
   - evaluate: |
@@ -58,7 +58,7 @@ pipeline:
         var taskList = document.querySelector('[class*="task-items-list"]');
 
         if (sessionArg) {
-          if (!taskList) return [{ Index: '-', Type: 'Error', Label: '未找到任务列表', Description: '', Selected: '' }];
+          if (!taskList) return [{ Index: '-', Type: 'Error', Step: '', Label: '未找到任务列表', Description: '', Selected: '' }];
           var tasks = taskList.querySelectorAll(':scope > [class*="task-item"]');
           var found = false;
           for (var si = 0; si < tasks.length; si++) {
@@ -68,14 +68,14 @@ pipeline:
               break;
             }
           }
-          if (!found) return [{ Index: '-', Type: 'Error', Label: '未找到 sessionId: ' + sessionArg, Description: '', Selected: '' }];
+          if (!found) return [{ Index: '-', Type: 'Error', Step: '', Label: '未找到 sessionId: ' + sessionArg, Description: '', Selected: '' }];
         } else {
           var parsed = parseInt(indexRaw);
           var isNumeric = !isNaN(parsed) && /^\d+$/.test(indexRaw);
           if (isNumeric) {
             resolvedIndex = parsed;
           } else if (indexRaw && indexRaw !== "0") {
-            if (!taskList) return [{ Index: '-', Type: 'Error', Label: '未找到任务列表', Description: '', Selected: '' }];
+            if (!taskList) return [{ Index: '-', Type: 'Error', Step: '', Label: '未找到任务列表', Description: '', Selected: '' }];
             var tasks2 = taskList.querySelectorAll(':scope > [class*="task-item"]');
             var found2 = false;
             for (var si2 = 0; si2 < tasks2.length; si2++) {
@@ -85,7 +85,7 @@ pipeline:
                 break;
               }
             }
-            if (!found2) return [{ Index: '-', Type: 'Error', Label: '未找到 sessionId: ' + indexRaw, Description: '', Selected: '' }];
+            if (!found2) return [{ Index: '-', Type: 'Error', Step: '', Label: '未找到 sessionId: ' + indexRaw, Description: '', Selected: '' }];
           }
         }
 
@@ -93,10 +93,10 @@ pipeline:
 
         if (taskIndex > 0) {
           if (!taskList) taskList = document.querySelector('[class*="task-items-list"]');
-          if (!taskList) return [{ Index: '-', Type: 'Error', Label: '未找到任务列表', Description: '', Selected: '' }];
+          if (!taskList) return [{ Index: '-', Type: 'Error', Step: '', Label: '未找到任务列表', Description: '', Selected: '' }];
           var tasksAll = taskList.querySelectorAll(':scope > [class*="task-item"]');
           if (taskIndex < 1 || taskIndex > tasksAll.length) {
-            return [{ Index: '-', Type: 'Error', Label: '任务索引超出范围 (1-' + tasksAll.length + ')', Description: '', Selected: '' }];
+            return [{ Index: '-', Type: 'Error', Step: '', Label: '任务索引超出范围 (1-' + tasksAll.length + ')', Description: '', Selected: '' }];
           }
           var task = tasksAll[taskIndex - 1];
           if (cls(task).indexOf('selected') < 0) {
@@ -106,10 +106,10 @@ pipeline:
         }
 
         var container = document.querySelector('#mc-agent-content-container');
-        if (!container) return [{ Index: '-', Type: 'Error', Label: '未找到对话容器', Description: '', Selected: '' }];
+        if (!container) return [{ Index: '-', Type: 'Error', Step: '', Label: '未找到对话容器', Description: '', Selected: '' }];
 
         var cards = container.querySelectorAll('[class*="ask-user-question-card-container"]');
-        if (cards.length === 0) return [{ Index: '-', Type: 'Info', Label: '当前任务没有问询', Description: '', Selected: '' }];
+        if (cards.length === 0) return [{ Index: '-', Type: 'Info', Step: '', Label: '当前任务没有问询', Description: '', Selected: '' }];
 
         var activeCard = null;
         for (var i = cards.length - 1; i >= 0; i--) {
@@ -119,7 +119,7 @@ pipeline:
           }
         }
 
-        if (!activeCard) return [{ Index: '-', Type: 'Info', Label: '所有问询已完成', Description: '', Selected: '' }];
+        if (!activeCard) return [{ Index: '-', Type: 'Info', Step: '', Label: '所有问询已完成', Description: '', Selected: '' }];
 
         if (cls(activeCard).indexOf('collapsed') >= 0) {
           activeCard.click();
@@ -136,20 +136,42 @@ pipeline:
         }
         var questionText = headerEl ? headerEl.textContent.trim() : '';
 
+        var stepInfo = '';
+        var footerEl = activeCard.querySelector('[class*="footer"], [class*="step-indicator"], [class*="progress"]');
+        if (footerEl) {
+          var footerText = footerEl.textContent.trim();
+          var stepMatch = footerText.match(/(\d+)\s*\/\s*(\d+)/);
+          if (stepMatch) {
+            var extra = footerText.replace(stepMatch[0], '').replace(/[─—\-\s]+/g, ' ').trim();
+            stepInfo = stepMatch[1] + '/' + stepMatch[2] + (extra ? ' ' + extra : '');
+          }
+        }
+        if (!stepInfo) {
+          var allCards = container.querySelectorAll('[class*="ask-user-question-card-container"]');
+          var total = allCards.length;
+          var completedCount = 0;
+          for (var ci = 0; ci < allCards.length; ci++) {
+            if (cls(allCards[ci]).indexOf('status-completed') >= 0) completedCount++;
+          }
+          if (total > 1) {
+            stepInfo = (completedCount + 1) + '/' + total;
+          }
+        }
+
         var optionsSection = activeCard.querySelector('[class*="options-section"], [class*="options-container"]');
         var results = [];
 
         if (questionText) {
-          results.push({ Index: 'Q', Type: 'Question', Label: questionText.substring(0, 200), Description: '', Selected: '' });
+          results.push({ Index: 'Q', Type: 'Question', Step: stepInfo, Label: questionText.substring(0, 200), Description: '', Selected: '' });
         }
 
         if (!optionsSection) {
           var allText = activeCard.textContent.trim();
           if (!questionText && allText) {
-            results.push({ Index: 'Q', Type: 'Question', Label: allText.substring(0, 200), Description: '', Selected: '' });
+            results.push({ Index: 'Q', Type: 'Question', Step: stepInfo, Label: allText.substring(0, 200), Description: '', Selected: '' });
           }
           if (results.length === 0) {
-            results.push({ Index: '-', Type: 'Info', Label: '问询中但未找到选项区域', Description: '', Selected: '' });
+            results.push({ Index: '-', Type: 'Info', Step: '', Label: '问询中但未找到选项区域', Description: '', Selected: '' });
           }
           return results;
         }
@@ -210,20 +232,24 @@ pipeline:
           if (radioIcon) isChecked = true;
 
           var hasInput = item.querySelector('input[type="text"], textarea, [contenteditable="true"]');
+          var isOther = /^(其他|Other)$/i.test(label.replace(/\s+/g, ''));
+          var effectiveHasInput = !!hasInput || isOther;
 
           optionsList.push({
             index: j + 1,
             label: label.substring(0, 300),
             desc: desc.substring(0, 300),
             checked: isChecked,
-            hasInput: !!hasInput,
+            hasInput: effectiveHasInput,
+            isOther: isOther,
             element: item,
             inputElement: hasInput
           });
 
           results.push({
             Index: String(j + 1),
-            Type: hasInput ? 'Option+Input' : 'Option',
+            Type: effectiveHasInput ? 'Option+Input' : 'Option',
+            Step: '',
             Label: label.substring(0, 300),
             Description: desc.substring(0, 300),
             Selected: isChecked ? '✓' : ''
@@ -240,20 +266,23 @@ pipeline:
           target.element.click();
           await new Promise(function(r) { setTimeout(r, 500); });
 
-          if (inputText) {
-            var inp = target.element.querySelector('input[type="text"], textarea, [contenteditable="true"]');
+          var findInput = function() {
+            var sel = 'input[type="text"], textarea, [contenteditable="true"]';
+            return target.element.querySelector(sel)
+              || activeCard.querySelector(sel + '[class*="input"], ' + sel + '[class*="other"]')
+              || activeCard.querySelector(sel);
+          };
+
+          if (inputText || target.isOther) {
+            var inp = findInput();
             if (!inp) {
-              inp = activeCard.querySelector('input[type="text"], textarea, [contenteditable="true"][class*="input"], [contenteditable="true"][class*="other"]');
-            }
-            if (!inp) {
-              for (var retryInp = 0; retryInp < 5; retryInp++) {
-                await new Promise(function(r) { setTimeout(r, 300); });
-                inp = target.element.querySelector('input[type="text"], textarea, [contenteditable="true"]');
-                if (!inp) inp = activeCard.querySelector('input[type="text"], textarea, [contenteditable="true"][class*="input"], [contenteditable="true"][class*="other"]');
+              for (var retryInp = 0; retryInp < 8; retryInp++) {
+                await new Promise(function(r) { setTimeout(r, 400); });
+                inp = findInput();
                 if (inp) break;
               }
             }
-            if (inp) {
+            if (inp && inputText) {
               inp.focus();
               await new Promise(function(r) { setTimeout(r, 200); });
               if (inp.tagName === 'INPUT' || inp.tagName === 'TEXTAREA') {
@@ -269,6 +298,9 @@ pipeline:
                 document.execCommand('insertText', false, inputText);
               }
               await new Promise(function(r) { setTimeout(r, 300); });
+            } else if (target.isOther && !inputText) {
+              results = [{ Index: String(selectId), Type: 'Input', Step: stepInfo, Label: target.label, Description: inp ? '输入框已就绪，请使用 --text 提供内容' : '未检测到输入框', Selected: '✓' }];
+              return results;
             }
           }
 
@@ -299,12 +331,12 @@ pipeline:
           if (submitBtn) {
             submitBtn.click();
             await new Promise(function(r) { setTimeout(r, 500); });
-            results = [{ Index: String(selectId), Type: 'Submitted', Label: target.label, Description: inputText || '', Selected: '✓' }];
+            results = [{ Index: String(selectId), Type: 'Submitted', Step: stepInfo, Label: target.label, Description: inputText || '', Selected: '✓' }];
           } else {
             for (var r2 = 0; r2 < results.length; r2++) {
               results[r2].Selected = (results[r2].Index === String(selectId)) ? '✓ (已选)' : '';
             }
-            results.push({ Index: '-', Type: 'Warning', Label: '已选择选项但未找到提交按钮', Description: '', Selected: '' });
+            results.push({ Index: '-', Type: 'Warning', Step: '', Label: '已选择选项但未找到提交按钮', Description: '', Selected: '' });
           }
         }
 
