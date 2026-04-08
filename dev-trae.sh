@@ -257,6 +257,174 @@ case "$cmd" in
             echo "  ✅ 全部通过"
         fi
         ;;
+    task-resolve)
+        auto_detect_endpoint
+        shift
+
+        SESSION_ARG="${1:-}"
+
+        if [ -n "$SESSION_ARG" ]; then
+            BLOCKED_SESSIONS=("$SESSION_ARG")
+            BLOCKED_TITLES=("(指定任务)")
+        else
+            TASKS_ERR=$(mktemp)
+            TASKS_JSON=$($BIN trae-cn tasks --format json 2>"$TASKS_ERR") || {
+                echo "❌ 无法获取任务列表" >&2
+                cat "$TASKS_ERR" >&2
+                rm -f "$TASKS_ERR"
+                echo "   💡 请检查 --page 参数是否有效，当前 endpoint: ${OPENCLI_CDP_ENDPOINT:-未设置}" >&2
+                exit 1
+            }
+            rm -f "$TASKS_ERR"
+
+            BLOCKED_SESSIONS=()
+            BLOCKED_TITLES=()
+            while IFS=$'\t' read -r sid title; do
+                [ -z "$sid" ] && continue
+                BLOCKED_SESSIONS+=("$sid")
+                BLOCKED_TITLES+=("$title")
+            done < <(echo "$TASKS_JSON" | jq -r '.[] | select(.Status | test("等待|waiting|⏳"; "i")) | [.SessionId, .Title] | @tsv')
+
+            if [ ${#BLOCKED_SESSIONS[@]} -eq 0 ]; then
+                echo "✅ 当前没有阻塞的任务"
+                exit 0
+            fi
+        fi
+
+        if [ ${#BLOCKED_SESSIONS[@]} -eq 1 ]; then
+            TARGET_SID="${BLOCKED_SESSIONS[0]}"
+            TARGET_TITLE="${BLOCKED_TITLES[0]}"
+        else
+            echo ""
+            echo "  ╭─────────────────────────────────────────────────╮"
+            echo "  │  📋 发现 ${#BLOCKED_SESSIONS[@]} 个阻塞任务，请选择要处理的任务  │"
+            echo "  ╰─────────────────────────────────────────────────╯"
+            echo ""
+            for i in "${!BLOCKED_SESSIONS[@]}"; do
+                idx=$((i + 1))
+                printf "  \033[1;33m[%d]\033[0m %s\n" "$idx" "${BLOCKED_TITLES[$i]}"
+                printf "      \033[2m%s\033[0m\n" "${BLOCKED_SESSIONS[$i]}"
+            done
+            echo ""
+            printf "  请选择 [1-%d]: " "${#BLOCKED_SESSIONS[@]}"
+            read -r CHOICE
+            CHOICE=$((CHOICE))
+            if [ "$CHOICE" -lt 1 ] || [ "$CHOICE" -gt "${#BLOCKED_SESSIONS[@]}" ]; then
+                echo "❌ 无效选择" >&2
+                exit 1
+            fi
+            TARGET_SID="${BLOCKED_SESSIONS[$((CHOICE - 1))]}"
+            TARGET_TITLE="${BLOCKED_TITLES[$((CHOICE - 1))]}"
+        fi
+
+        ASK_JSON=$($BIN trae-cn task-ask --session "$TARGET_SID" --format json 2>/dev/null) || {
+            echo "❌ 无法获取任务问询信息 (session: $TARGET_SID)" >&2
+            exit 1
+        }
+
+        QUESTION=$(echo "$ASK_JSON" | jq -r '.[] | select(.Type == "Question") | .Label' 2>/dev/null | head -1)
+        if [ -z "$QUESTION" ]; then
+            echo "ℹ️  任务 [${TARGET_TITLE}] 当前没有待回答的问询"
+            exit 0
+        fi
+
+        TITLE_DISPLAY="${TARGET_TITLE}"
+        [ ${#TITLE_DISPLAY} -gt 50 ] && TITLE_DISPLAY="${TITLE_DISPLAY:0:50}..."
+
+        Q_DISPLAY="$QUESTION"
+        Q_LINES=()
+        while [ ${#Q_DISPLAY} -gt 0 ]; do
+            Q_LINES+=("${Q_DISPLAY:0:60}")
+            Q_DISPLAY="${Q_DISPLAY:60}"
+        done
+
+        BOX_W=64
+        BORDER=$(printf '─%.0s' $(seq 1 $BOX_W))
+
+        echo ""
+        printf "  \033[1;36m╭%s╮\033[0m\n" "$BORDER"
+        printf "  \033[1;36m│\033[0m \033[1m❓ %s\033[0m" "$TITLE_DISPLAY"
+        PAD=$((BOX_W - 3 - ${#TITLE_DISPLAY}))
+        [ $PAD -gt 0 ] && printf '%*s' "$PAD" ""
+        printf " \033[1;36m│\033[0m\n"
+        printf "  \033[1;36m├%s┤\033[0m\n" "$BORDER"
+        for line in "${Q_LINES[@]}"; do
+            printf "  \033[1;36m│\033[0m  %s" "$line"
+            PAD=$((BOX_W - 2 - ${#line}))
+            [ $PAD -gt 0 ] && printf '%*s' "$PAD" ""
+            printf " \033[1;36m│\033[0m\n"
+        done
+        printf "  \033[1;36m├%s┤\033[0m\n" "$BORDER"
+
+        OPTIONS_COUNT=$(echo "$ASK_JSON" | jq '[.[] | select(.Type != "Question")] | length')
+        OPTIONS_INDICES=()
+        OPTIONS_LABELS=()
+        OPTIONS_DESCS=()
+
+        while IFS=$'\t' read -r oidx olabel odesc; do
+            [ -z "$oidx" ] && continue
+            OPTIONS_INDICES+=("$oidx")
+            OPTIONS_LABELS+=("$olabel")
+            OPTIONS_DESCS+=("$odesc")
+        done < <(echo "$ASK_JSON" | jq -r '.[] | select(.Type != "Question") | [.Index, .Label, .Description] | @tsv')
+
+        for i in "${!OPTIONS_INDICES[@]}"; do
+            oidx="${OPTIONS_INDICES[$i]}"
+            olabel="${OPTIONS_LABELS[$i]}"
+            odesc="${OPTIONS_DESCS[$i]}"
+            printf "  \033[1;36m│\033[0m  \033[1;33m[%s]\033[0m \033[1m%s\033[0m" "$oidx" "$olabel"
+            PAD=$((BOX_W - 6 - ${#oidx} - ${#olabel}))
+            [ $PAD -gt 0 ] && printf '%*s' "$PAD" ""
+            printf " \033[1;36m│\033[0m\n"
+            if [ -n "$odesc" ]; then
+                printf "  \033[1;36m│\033[0m      \033[2m%s\033[0m" "$odesc"
+                PAD=$((BOX_W - 6 - ${#odesc}))
+                [ $PAD -gt 0 ] && printf '%*s' "$PAD" ""
+                printf " \033[1;36m│\033[0m\n"
+            fi
+        done
+
+        printf "  \033[1;36m╰%s╯\033[0m\n" "$BORDER"
+        echo ""
+        printf "  请选择选项 [1-%d] (q 取消): " "$OPTIONS_COUNT"
+        read -r OPT_CHOICE
+
+        if [ "$OPT_CHOICE" = "q" ] || [ "$OPT_CHOICE" = "Q" ]; then
+            echo "  已取消"
+            exit 0
+        fi
+
+        OPT_IDX=$((OPT_CHOICE))
+        if [ "$OPT_IDX" -lt 1 ] || [ "$OPT_IDX" -gt "$OPTIONS_COUNT" ]; then
+            echo "❌ 无效选择" >&2
+            exit 1
+        fi
+
+        OPT_TYPE=$(echo "$ASK_JSON" | jq -r --argjson idx "$OPT_IDX" '.[] | select(.Type != "Question") | select(.Index == ($idx | tostring)) | .Type')
+        INPUT_TEXT=""
+        if echo "$OPT_TYPE" | grep -qi "input"; then
+            printf "  请输入内容: "
+            read -r INPUT_TEXT
+        fi
+
+        echo ""
+        echo "  ⏳ 正在提交选择..."
+
+        if [ -n "$INPUT_TEXT" ]; then
+            RESULT=$($BIN trae-cn task-ask --session "$TARGET_SID" --select "$OPT_IDX" --text "$INPUT_TEXT" --format json 2>&1) || true
+        else
+            RESULT=$($BIN trae-cn task-ask --session "$TARGET_SID" --select "$OPT_IDX" --format json 2>&1) || true
+        fi
+
+        SUBMITTED=$(echo "$RESULT" | jq -r '.[] | select(.Type == "Submitted") | .Label' 2>/dev/null | head -1)
+        if [ -n "$SUBMITTED" ]; then
+            echo "  ✅ 已提交: $SUBMITTED"
+        else
+            echo "  ⚠️  提交结果:"
+            echo "$RESULT" | head -5 | sed 's/^/      /'
+        fi
+        echo ""
+        ;;
     help|"")
         echo "Trae CN 开发调试脚本"
         echo ""
@@ -273,6 +441,7 @@ case "$cmd" in
         echo "  build           - cargo build"
         echo "  test            - 测试连接 + 读取"
         echo "  smoke           - 冒烟测试核心命令"
+        echo "  task-resolve    - 交互式处理阻塞任务的问询"
         echo "  init-env        - 方案3: 通过 launchd 设置 ELECTRON_EXTRA_LAUNCH_ARGS 启用 CDP"
         echo "  init-wrapper    - 方案4: 替换 Electron 二进制为 wrapper 脚本启用 CDP"
         echo "  help            - 显示此帮助"
