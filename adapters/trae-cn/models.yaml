@@ -1,0 +1,85 @@
+site: trae-cn
+name: models
+description: 获取 Trae CN 可用模型列表
+domain: localhost
+strategy: ui
+browser: true
+
+args:
+  type:
+    positional: true
+    type: string
+    default: all
+    choices: [all, builder, solo_coder, solo_builder, code_reviewer]
+    description: "按 agent 类型过滤：all, builder, solo_coder, solo_builder, code_reviewer"
+
+columns: [agent_type, name, display_name, model_type, tags, is_default, max_mode]
+
+pipeline:
+  - evaluate: |
+      (function() {
+        var filterType = ${{ args.type | json }};
+
+        function findModelStore() {
+          var el = document.querySelector('button.icd-model-select-trigger');
+          if (!el) return null;
+          var fiberKey = Object.keys(el).find(function(k) {
+            return k.startsWith('__reactFiber');
+          });
+          if (!fiberKey) return null;
+          var cur = el[fiberKey];
+          for (var i = 0; i < 50 && cur; i++) {
+            var s = cur.memoizedState;
+            var hookIdx = 0;
+            while (s && hookIdx < 30) {
+              try {
+                var ms = s.memoizedState;
+                if (ms && ms._store && typeof ms._store.getState === 'function') {
+                  var state = ms._store.getState();
+                  if (state.originModelListMap !== undefined) {
+                    return state;
+                  }
+                }
+              } catch (e) {}
+              hookIdx++;
+              s = s.next;
+            }
+            cur = cur.return;
+          }
+          return null;
+        }
+
+        var state = findModelStore();
+        if (!state) {
+          return [{ agent_type: '-', name: '-', display_name: '未找到模型 store', model_type: '-', tags: '-', is_default: false, max_mode: false }];
+        }
+
+        var mlm = state.originModelListMap;
+        var results = [];
+        var types = filterType === 'all' ? Object.keys(mlm) : [filterType];
+
+        for (var ti = 0; ti < types.length; ti++) {
+          var agentType = types[ti];
+          var models = mlm[agentType];
+          if (!Array.isArray(models)) continue;
+          for (var mi = 0; mi < models.length; mi++) {
+            var m = models[mi];
+            if (!m.selectable) continue;
+            results.push({
+              agent_type: agentType,
+              name: m.name,
+              display_name: m.display_name || m.name,
+              model_type: m.model_type || '-',
+              tags: (m.tags || []).join(',') || '-',
+              is_default: m.is_default || false,
+              max_mode: m.max_mode || false
+            });
+          }
+        }
+
+        if (results.length === 0) {
+          results.push({ agent_type: filterType, name: '-', display_name: '无可用模型', model_type: '-', tags: '-', is_default: false, max_mode: false });
+        }
+
+        return results;
+      })()
