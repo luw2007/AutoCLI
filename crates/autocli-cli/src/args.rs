@@ -86,6 +86,7 @@ mod tests {
             description: None,
             choices: None,
             default: None,
+            short: None,
         }
     }
 

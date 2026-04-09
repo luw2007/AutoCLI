@@ -7,18 +7,14 @@ if [ -L "$SCRIPT" ]; then
   SCRIPT="$(readlink "$SCRIPT")"
   [[ "$SCRIPT" != /* ]] && SCRIPT="$(cd "$(dirname "$0")" && pwd)/$SCRIPT"
 fi
-OPENCLI_PATH="$(cd "$(dirname "$SCRIPT")" && pwd)"
-cd "${OPENCLI_PATH}"
+AUTOCLI_PATH="$(cd "$(dirname "$SCRIPT")" && pwd)"
+cd "${AUTOCLI_PATH}"
 
-CDP_HOST="${OPENCLI_CDP_HOST:-localhost}"
-CDP_PORT="${OPENCLI_CDP_PORT:-9222}"
+CDP_HOST="${AUTOCLI_CDP_HOST:-localhost}"
+CDP_PORT="${AUTOCLI_CDP_PORT:-9222}"
 CDP_BASE="http://${CDP_HOST}:${CDP_PORT}"
-if [ -x "${OPENCLI_PATH}/target/debug/autocli" ]; then
-    BIN="${OPENCLI_PATH}/target/debug/autocli"
-else
-    BIN="${OPENCLI_PATH}/target/debug/opencli-rs"
-fi
-STATE_FILE="${TMPDIR:-/tmp}/opencli-cdp-endpoint"
+BIN="${AUTOCLI_PATH}/target/debug/autocli"
+STATE_FILE="${TMPDIR:-/tmp}/autocli-cdp-endpoint"
 
 list_pages() {
     curl -sf "${CDP_BASE}/json/list" | jq -r '
@@ -49,14 +45,14 @@ resolve_page_id() {
 }
 
 auto_detect_endpoint() {
-    if [ -n "${OPENCLI_CDP_ENDPOINT:-}" ]; then
+    if [ -n "${AUTOCLI_CDP_ENDPOINT:-}" ]; then
         return 0
     fi
 
     if [ -n "${PAGE_IDX:-}" ]; then
         local pid
         pid=$(resolve_page_id "$PAGE_IDX")
-        export OPENCLI_CDP_ENDPOINT="ws://${CDP_HOST}:${CDP_PORT}/devtools/page/${pid}"
+        export AUTOCLI_CDP_ENDPOINT="ws://${CDP_HOST}:${CDP_PORT}/devtools/page/${pid}"
         return 0
     fi
 
@@ -64,7 +60,7 @@ auto_detect_endpoint() {
         local saved
         saved=$(cat "$STATE_FILE")
         if [ -n "$saved" ]; then
-            export OPENCLI_CDP_ENDPOINT="$saved"
+            export AUTOCLI_CDP_ENDPOINT="$saved"
             return 0
         fi
     fi
@@ -97,8 +93,8 @@ auto_detect_endpoint() {
         page_id="$first_id"
     fi
 
-    export OPENCLI_CDP_ENDPOINT="ws://${CDP_HOST}:${CDP_PORT}/devtools/page/${page_id}"
-    echo "$OPENCLI_CDP_ENDPOINT" > "$STATE_FILE"
+    export AUTOCLI_CDP_ENDPOINT="ws://${CDP_HOST}:${CDP_PORT}/devtools/page/${page_id}"
+    echo "$AUTOCLI_CDP_ENDPOINT" > "$STATE_FILE"
 }
 
 PAGE_IDX=""
@@ -184,10 +180,10 @@ case "$cmd" in
         fi
         page_id=$(echo "$line" | cut -f2)
         title=$(echo "$line" | cut -f3)
-        export OPENCLI_CDP_ENDPOINT="ws://${CDP_HOST}:${CDP_PORT}/devtools/page/${page_id}"
-        echo "$OPENCLI_CDP_ENDPOINT" > "$STATE_FILE"
+        export AUTOCLI_CDP_ENDPOINT="ws://${CDP_HOST}:${CDP_PORT}/devtools/page/${page_id}"
+        echo "$AUTOCLI_CDP_ENDPOINT" > "$STATE_FILE"
         echo "✅ 已切换到 [${idx}] ${title}"
-        echo "   ${OPENCLI_CDP_ENDPOINT}"
+        echo "   ${AUTOCLI_CDP_ENDPOINT}"
         echo ""
         $BIN trae-cn status
         ;;
@@ -238,7 +234,7 @@ case "$cmd" in
         }
 
         echo "🧪 Trae CN 冒烟测试"
-        echo "   endpoint: ${OPENCLI_CDP_ENDPOINT}"
+        echo "   endpoint: ${AUTOCLI_CDP_ENDPOINT}"
         echo ""
 
         smoke_run "status"       $BIN trae-cn status
@@ -247,6 +243,10 @@ case "$cmd" in
         smoke_run "context"      $BIN trae-cn context
         smoke_run "config"       $BIN trae-cn config
         smoke_run "history"      $BIN trae-cn history
+        smoke_run "models"       $BIN trae-cn models
+        smoke_run "rules-skills" $BIN trae-cn rules-skills
+        smoke_run "projects"     $BIN trae-cn projects
+        smoke_run "commands"     $BIN trae-cn commands
         smoke_run "task-detail"  $BIN trae-cn task-detail 1
         smoke_run "export"       $BIN trae-cn export
         smoke_run "dump"         $BIN trae-cn dump
@@ -276,7 +276,7 @@ case "$cmd" in
                 echo "❌ 无法获取任务列表" >&2
                 cat "$TASKS_ERR" >&2
                 rm -f "$TASKS_ERR"
-                echo "   💡 请检查 --page 参数是否有效，当前 endpoint: ${OPENCLI_CDP_ENDPOINT:-未设置}" >&2
+                echo "   💡 请检查 --page 参数是否有效，当前 endpoint: ${AUTOCLI_CDP_ENDPOINT:-未设置}" >&2
                 exit 1
             }
             rm -f "$TASKS_ERR"
@@ -430,13 +430,18 @@ case "$cmd" in
         echo ""
         ;;
     help|"")
-        echo "Trae CN 开发调试脚本"
+        echo "Trae CN 开发调试脚本 (autocli)"
         echo ""
         echo "使用方法: $0 [--page=N|ID] <command> [args...]"
         echo ""
         echo "全局选项:"
         echo "  --page=N|ID      - 指定 page 编号或 page-id (优先级: --page > use 持久化 > 默认 1)"
         echo "  -f, --format=FMT - 输出格式: table(默认), json, yaml, csv, md"
+        echo ""
+        echo "环境变量:"
+        echo "  AUTOCLI_CDP_ENDPOINT - 直接指定 CDP WebSocket endpoint (跳过自动检测)"
+        echo "  AUTOCLI_CDP_HOST     - CDP 主机地址 (默认: localhost)"
+        echo "  AUTOCLI_CDP_PORT     - CDP 端口号 (默认: 9222)"
         echo ""
         echo "脚本命令:"
         echo "  pages           - 列出所有 CDP page"
@@ -446,8 +451,8 @@ case "$cmd" in
         echo "  test            - 测试连接 + 读取"
         echo "  smoke           - 冒烟测试核心命令"
         echo "  task-resolve    - 交互式处理阻塞任务的问询"
-        echo "  init-env        - 方案3: 通过 launchd 设置 ELECTRON_EXTRA_LAUNCH_ARGS 启用 CDP"
-        echo "  init-wrapper    - 方案4: 替换 Electron 二进制为 wrapper 脚本启用 CDP"
+        echo "  init-env        - 通过 launchd 设置 ELECTRON_EXTRA_LAUNCH_ARGS 启用 CDP"
+        echo "  init-wrapper    - 替换 Electron 二进制为 wrapper 脚本启用 CDP"
         echo "  help            - 显示此帮助"
         echo ""
         echo "trae-cn 子命令 (自动检测 CDP endpoint，透传所有参数):"
@@ -552,7 +557,6 @@ fi'
         ;;
     *)
         auto_detect_endpoint
-        export AUTOCLI_CDP_ENDPOINT="${OPENCLI_CDP_ENDPOINT}"
         export AUTOCLI_FOCUS_APP="Trae CN"
         shift
         if [ "$OUTPUT_FORMAT" != "table" ]; then

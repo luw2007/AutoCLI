@@ -317,7 +317,7 @@ pub fn render_html(data: &Value, columns: Option<&[String]>) -> String {
                     ));
                 }
                 html.push_str("        </tbody></table></div>");
-            } else if cols.len() == 2 && cols.contains(&"Role".to_string()) && cols.contains(&"Content".to_string()) {
+            } else if cols.contains(&"Role".to_string()) && cols.contains(&"Content".to_string()) {
                 for item in arr {
                     let role = item.get("Role").and_then(|v| v.as_str()).unwrap_or("Unknown");
                     let content = item.get("Content").and_then(|v| v.as_str()).unwrap_or("");
