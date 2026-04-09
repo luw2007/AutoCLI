@@ -1,144 +1,117 @@
 site: trae-cn
 name: commands
-description: 获取当前可用的 / 命令列表（按项目隔离）
+description: 获取当前可用的 /commands 和 @agents 列表（按项目隔离，从 React Fiber 直接提取）
 domain: localhost
 strategy: ui
 browser: true
 
 args:
+  kind:
+    type: string
+    default: ""
+    description: 按类型筛选 (slash/agent)，留空则全部显示
+  source:
+    type: string
+    default: ""
+    description: 按来源筛选 (builtin/commands/skills/custom)，留空则全部显示
   project:
     type: string
     default: ""
-    description: 按项目名称筛选，留空则显示全部并按项目分组
+    description: 按项目路径或名称筛选，留空则显示全部项目
 
-columns: [Group, Command, Badge, Id]
+columns: [Project, Type, Name, Description, Source]
 
 pipeline:
-  - focus: true
-
   - evaluate: |
-      (async () => {
-        var btn = document.querySelector('[class*="new-task-button"]');
-        if (btn) {
-          btn.click();
-          await new Promise(function(r) { setTimeout(r, 1000); });
-        }
-        var editor = document.querySelector('.chat-input-v2-input-box-editable');
-        if (!editor) {
-          return [{ Group: '-', Command: '-', Badge: '-', Id: 'Error: 未找到输入框' }];
-        }
-        editor.focus();
-        await new Promise(function(r) { setTimeout(r, 200); });
-        var sel = window.getSelection();
-        sel.selectAllChildren(editor);
-        document.execCommand('delete', false, null);
-        await new Promise(function(r) { setTimeout(r, 100); });
-        return [];
-      })()
+      (function(){
+        var typeFilter = (${{ args.kind | json }} || '').toLowerCase();
+        var sourceFilter = (${{ args.source | json }} || '').toLowerCase();
+        var projectFilter = (${{ args.project | json }} || '').toLowerCase();
+        var locs = document.querySelectorAll('.chat-input-v2-mention-popup-locator');
+        var all = [];
 
-  - type:
-      selector: ".chat-input-v2-input-box-editable"
-      text: "/"
+        var defaultProject = '';
+        var titleMatch = document.title.match(/\u2014\s*(.+)$/);
+        if (titleMatch) defaultProject = titleMatch[1].trim();
+        if (!defaultProject) defaultProject = document.title.replace(/ - .*$/, '').trim() || 'unknown';
 
-  - evaluate: |
-      (async () => {
-        var projectFilter = ${{ args.project | json }} || "";
-        await new Promise(function(r) { setTimeout(r, 2000); });
+        locs.forEach(function(loc) {
+          var fk = Object.keys(loc).find(function(k) { return k.startsWith('__reactFiber'); });
+          if (!fk) return;
+          var cur = loc[fk];
+          var sessionRootPath = '';
+          var cmds = null;
+          var agents = null;
 
-        var activeLocator = null;
-        document.querySelectorAll('.chat-input-v2-mention-popup-locator').forEach(function(loc) {
-          if (loc.children.length > 0) activeLocator = loc;
-        });
-
-        if (!activeLocator) {
-          for (var w = 0; w < 5; w++) {
-            await new Promise(function(r) { setTimeout(r, 500); });
-            document.querySelectorAll('.chat-input-v2-mention-popup-locator').forEach(function(loc) {
-              if (loc.children.length > 0) activeLocator = loc;
-            });
-            if (activeLocator) break;
+          for (var d = 0; d < 25 && cur; d++) {
+            var p = cur.memoizedProps || {};
+            if (p.externalCommands && !cmds) cmds = p.externalCommands;
+            if (p.subAgentList && !agents) agents = p.subAgentList;
+            if (p.mentionProvider && p.mentionProvider.sessionRootPath && !sessionRootPath) {
+              sessionRootPath = p.mentionProvider.sessionRootPath;
+            }
+            if (p.sessionRootPath && !sessionRootPath) sessionRootPath = p.sessionRootPath;
+            cur = cur.return;
           }
-        }
 
-        var editor = document.querySelector('.chat-input-v2-input-box-editable');
+          var project = sessionRootPath || defaultProject;
+          var projectName = project.split('/').filter(Boolean).pop() || project;
 
-        if (!activeLocator) {
-          if (editor) {
-            var sel = window.getSelection();
-            sel.selectAllChildren(editor);
-            document.execCommand('delete', false, null);
-          }
-          return [{ Group: '-', Command: '-', Badge: '-', Id: 'Error: / 弹出框无内容' }];
-        }
+          if (projectFilter && project.toLowerCase().indexOf(projectFilter) === -1 && projectName.toLowerCase().indexOf(projectFilter) === -1) return;
 
-        var results = [];
-        var groups = activeLocator.querySelectorAll('.agent-popup-item-group');
-
-        if (groups.length > 0) {
-          groups.forEach(function(g) {
-            var titleEl = g.querySelector('.agent-popup-item-group-title');
-            var groupName = titleEl ? titleEl.textContent.trim() : 'unknown';
-
-            if (projectFilter && groupName.toLowerCase().indexOf(projectFilter.toLowerCase()) === -1) return;
-
-            var items = g.querySelectorAll('.agent-popup-item');
-            items.forEach(function(item) {
-              var nameEl = item.querySelector('.agent-autocomplete-popup-item-name, [class*="item-name"]');
-              var badgeEl = item.querySelector('[class*="badge-text"]');
-              var name = nameEl ? nameEl.textContent.trim() : '';
-              var badge = badgeEl ? badgeEl.textContent.trim() : '-';
-              var id = (item.id || '').replace('agent-popup-item_', '');
-
-              if (!name) {
-                name = item.textContent.trim().split('\n')[0].trim();
-              }
-              if (name.length > 60) name = name.substring(0, 60) + '...';
-
-              results.push({
-                Group: groupName,
-                Command: name,
-                Badge: badge,
-                Id: id
+          if (cmds) {
+            cmds.forEach(function(cmd) {
+              all.push({
+                Project: projectName,
+                Type: 'slash',
+                Name: cmd.name || '',
+                Description: (cmd.desc || '').substring(0, 120),
+                Source: cmd.source || ''
               });
             });
-          });
-        }
-
-        if (results.length === 0) {
-          var allItems = activeLocator.querySelectorAll('[class*="item"], [role="option"], li');
-          allItems.forEach(function(item) {
-            var text = item.textContent.trim();
-            if (!text || text.length > 200) return;
-            var lines = text.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l; });
-            results.push({
-              Group: '-',
-              Command: lines[0] || text.substring(0, 60),
-              Badge: lines.length > 1 ? lines[1].substring(0, 40) : '-',
-              Id: item.id || item.getAttribute('data-id') || '-'
-            });
-          });
-        }
-
-        if (results.length === 0) {
-          results.push({
-            Group: '-',
-            Command: '-',
-            Badge: activeLocator.innerHTML.substring(0, 100),
-            Id: 'raw-html'
-          });
-        }
-
-        if (editor) {
-          var sel = window.getSelection();
-          sel.selectAllChildren(editor);
-          document.execCommand('delete', false, null);
-          await new Promise(function(r) { setTimeout(r, 100); });
-          if (editor.textContent.trim().length > 0) {
-            editor.innerHTML = '';
-            editor.dispatchEvent(new Event('input', { bubbles: true }));
           }
-          editor.blur();
+
+          if (agents) {
+            agents.forEach(function(a) {
+              all.push({
+                Project: projectName,
+                Type: a.type || 'agent',
+                Name: a.name || '',
+                Description: (a.description || '').substring(0, 120),
+                Source: a.unique_name || ''
+              });
+            });
+          }
+        });
+
+        if (typeFilter) {
+          if (typeFilter === 'slash') {
+            all = all.filter(function(r) { return r.Type === 'slash'; });
+          } else if (typeFilter === 'agent') {
+            all = all.filter(function(r) { return r.Type !== 'slash'; });
+          } else {
+            all = all.filter(function(r) {
+              return r.Type.toLowerCase().indexOf(typeFilter) >= 0;
+            });
+          }
+        }
+        if (sourceFilter) {
+          all = all.filter(function(r) {
+            return r.Source.toLowerCase().indexOf(sourceFilter) >= 0;
+          });
         }
 
-        return results;
+        if (all.length === 0) {
+          return [{ Project: '-', Type: '-', Name: '-', Description: '未检测到可用命令', Source: '-' }];
+        }
+
+        var seen = {};
+        all = all.filter(function(r) {
+          var key = r.Project + '|' + r.Type + '|' + r.Name + '|' + r.Source;
+          if (seen[key]) return false;
+          seen[key] = true;
+          return true;
+        });
+
+        return all;
       })()

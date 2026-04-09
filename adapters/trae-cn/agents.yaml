@@ -1,0 +1,64 @@
+site: trae-cn
+name: agents
+description: 获取当前可用的 @agents 智能体列表
+domain: localhost
+strategy: ui
+browser: true
+
+args:
+  type:
+    type: string
+    default: ""
+    description: 按智能体类型筛选，留空则全部显示
+  source:
+    type: string
+    default: ""
+    description: 按来源筛选 (unique_name)，留空则全部显示
+
+columns: [Type, Id, Name, Description, Source]
+
+pipeline:
+  - evaluate: |
+      (function(){
+        var typeFilter = (${{ args.type | json }} || "").toLowerCase();
+        var sourceFilter = (${{ args.source | json }} || "").toLowerCase();
+        var locs = document.querySelectorAll('.chat-input-v2-mention-popup-locator');
+        var agents = [];
+
+        locs.forEach(function(loc) {
+          var fk = Object.keys(loc).find(function(k) { return k.startsWith('__reactFiber'); });
+          if (!fk) return;
+          var cur = loc[fk];
+          for (var d = 0; d < 20 && cur; d++) {
+            var p = cur.memoizedProps || {};
+            if (p.subAgentList && agents.length === 0) {
+              p.subAgentList.forEach(function(a) {
+                agents.push({
+                  Type: a.type || 'agent',
+                  Id: a.agent_id || '',
+                  Name: a.name || '',
+                  Description: (a.description || '').substring(0, 120),
+                  Source: a.unique_name || ''
+                });
+              });
+            }
+            cur = cur.return;
+          }
+        });
+
+        if (typeFilter) {
+          agents = agents.filter(function(r) {
+            return r.Type.toLowerCase().indexOf(typeFilter) >= 0;
+          });
+        }
+        if (sourceFilter) {
+          agents = agents.filter(function(r) {
+            return r.Source.toLowerCase().indexOf(sourceFilter) >= 0;
+          });
+        }
+
+        if (agents.length === 0) {
+          return [{ Type: '-', Id: '-', Name: '-', Description: '未检测到可用智能体', Source: '-' }];
+        }
+        return agents;
+      })()
