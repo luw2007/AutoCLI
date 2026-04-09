@@ -314,6 +314,11 @@ impl IPage for CdpPage {
         Ok(())
     }
 
+    async fn bring_to_front(&self) -> Result<(), CliError> {
+        self.send_cdp("Page.bringToFront", json!({})).await?;
+        Ok(())
+    }
+
     async fn intercept_requests(&self, url_pattern: &str) -> Result<(), CliError> {
         let js = dom_helpers::install_interceptor_js(url_pattern);
         self.evaluate_js(&js, false).await?;

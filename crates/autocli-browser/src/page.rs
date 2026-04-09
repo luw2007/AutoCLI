@@ -219,6 +219,11 @@ impl IPage for DaemonPage {
         Ok(())
     }
 
+    async fn bring_to_front(&self) -> Result<(), CliError> {
+        self.eval_js("window.focus()").await?;
+        Ok(())
+    }
+
     async fn intercept_requests(&self, url_pattern: &str) -> Result<(), CliError> {
         let js = dom_helpers::install_interceptor_js(url_pattern);
         self.eval_js(&js).await?;

@@ -337,6 +337,49 @@ impl StepHandler for PressStep {
 }
 
 // ---------------------------------------------------------------------------
+// FocusStep — bring browser window to front
+// ---------------------------------------------------------------------------
+
+pub struct FocusStep;
+
+#[async_trait]
+impl StepHandler for FocusStep {
+    fn name(&self) -> &'static str {
+        "focus"
+    }
+
+    fn is_browser_step(&self) -> bool {
+        true
+    }
+
+    async fn execute(
+        &self,
+        page: Option<Arc<dyn IPage>>,
+        _params: &Value,
+        data: &Value,
+        _args: &HashMap<String, Value>,
+    ) -> Result<Value, CliError> {
+        let pg = require_page(&page)?;
+        pg.bring_to_front().await?;
+
+        if cfg!(target_os = "macos") {
+            if let Ok(app) = std::env::var("AUTOCLI_FOCUS_APP") {
+                let script = format!(
+                    "tell application \"{}\" to activate",
+                    app.replace('\"', "\\\"")
+                );
+                let _ = tokio::process::Command::new("osascript")
+                    .args(["-e", &script])
+                    .output()
+                    .await;
+            }
+        }
+
+        Ok(data.clone())
+    }
+}
+
+// ---------------------------------------------------------------------------
 // EvaluateStep
 // ---------------------------------------------------------------------------
 
@@ -618,6 +661,7 @@ pub fn register_browser_steps(registry: &mut StepRegistry) {
     registry.register(Arc::new(TypeStep));
     registry.register(Arc::new(WaitStep));
     registry.register(Arc::new(PressStep));
+    registry.register(Arc::new(FocusStep));
     registry.register(Arc::new(EvaluateStep));
     registry.register(Arc::new(SnapshotStep));
     registry.register(Arc::new(ScreenshotStep));
@@ -758,6 +802,7 @@ mod tests {
         assert!(registry.get("type").is_some());
         assert!(registry.get("wait").is_some());
         assert!(registry.get("press").is_some());
+        assert!(registry.get("focus").is_some());
         assert!(registry.get("evaluate").is_some());
         assert!(registry.get("snapshot").is_some());
         assert!(registry.get("screenshot").is_some());
@@ -815,6 +860,7 @@ mod tests {
         assert!(TypeStep.is_browser_step());
         assert!(WaitStep.is_browser_step());
         assert!(PressStep.is_browser_step());
+        assert!(FocusStep.is_browser_step());
         assert!(EvaluateStep.is_browser_step());
         assert!(SnapshotStep.is_browser_step());
         assert!(ScreenshotStep.is_browser_step());

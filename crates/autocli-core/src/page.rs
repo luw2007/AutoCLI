@@ -193,4 +193,9 @@ pub trait IPage: Send + Sync {
 
     /// Get network requests (captured)
     async fn get_network_requests(&self) -> Result<Vec<NetworkRequest>, CliError>;
+
+    /// Bring the page/window to front (activate, unminimize, raise to top)
+    async fn bring_to_front(&self) -> Result<(), CliError> {
+        Ok(())
+    }
 }

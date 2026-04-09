@@ -553,6 +553,7 @@ fi'
     *)
         auto_detect_endpoint
         export AUTOCLI_CDP_ENDPOINT="${OPENCLI_CDP_ENDPOINT}"
+        export AUTOCLI_FOCUS_APP="Trae CN"
         shift
         if [ "$OUTPUT_FORMAT" != "table" ]; then
             $BIN trae-cn "$cmd" --format "$OUTPUT_FORMAT" "$@"

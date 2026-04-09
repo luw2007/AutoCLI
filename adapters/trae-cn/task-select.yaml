@@ -19,6 +19,7 @@ args:
 columns: [Status, Message]
 
 pipeline:
+  - focus: true
   - evaluate: |
       (async () => {
         const sessionArg = ${{ args.session | json }} || "";
