@@ -1,0 +1,144 @@
+site: trae-cn
+name: commands
+description: 获取当前可用的 / 命令列表（按项目隔离）
+domain: localhost
+strategy: ui
+browser: true
+
+args:
+  project:
+    type: string
+    default: ""
+    description: 按项目名称筛选，留空则显示全部并按项目分组
+
+columns: [Group, Command, Badge, Id]
+
+pipeline:
+  - focus: true
+
+  - evaluate: |
+      (async () => {
+        var btn = document.querySelector('[class*="new-task-button"]');
+        if (btn) {
+          btn.click();
+          await new Promise(function(r) { setTimeout(r, 1000); });
+        }
+        var editor = document.querySelector('.chat-input-v2-input-box-editable');
+        if (!editor) {
+          return [{ Group: '-', Command: '-', Badge: '-', Id: 'Error: 未找到输入框' }];
+        }
+        editor.focus();
+        await new Promise(function(r) { setTimeout(r, 200); });
+        var sel = window.getSelection();
+        sel.selectAllChildren(editor);
+        document.execCommand('delete', false, null);
+        await new Promise(function(r) { setTimeout(r, 100); });
+        return [];
+      })()
+
+  - type:
+      selector: ".chat-input-v2-input-box-editable"
+      text: "/"
+
+  - evaluate: |
+      (async () => {
+        var projectFilter = ${{ args.project | json }} || "";
+        await new Promise(function(r) { setTimeout(r, 2000); });
+
+        var activeLocator = null;
+        document.querySelectorAll('.chat-input-v2-mention-popup-locator').forEach(function(loc) {
+          if (loc.children.length > 0) activeLocator = loc;
+        });
+
+        if (!activeLocator) {
+          for (var w = 0; w < 5; w++) {
+            await new Promise(function(r) { setTimeout(r, 500); });
+            document.querySelectorAll('.chat-input-v2-mention-popup-locator').forEach(function(loc) {
+              if (loc.children.length > 0) activeLocator = loc;
+            });
+            if (activeLocator) break;
+          }
+        }
+
+        var editor = document.querySelector('.chat-input-v2-input-box-editable');
+
+        if (!activeLocator) {
+          if (editor) {
+            var sel = window.getSelection();
+            sel.selectAllChildren(editor);
+            document.execCommand('delete', false, null);
+          }
+          return [{ Group: '-', Command: '-', Badge: '-', Id: 'Error: / 弹出框无内容' }];
+        }
+
+        var results = [];
+        var groups = activeLocator.querySelectorAll('.agent-popup-item-group');
+
+        if (groups.length > 0) {
+          groups.forEach(function(g) {
+            var titleEl = g.querySelector('.agent-popup-item-group-title');
+            var groupName = titleEl ? titleEl.textContent.trim() : 'unknown';
+
+            if (projectFilter && groupName.toLowerCase().indexOf(projectFilter.toLowerCase()) === -1) return;
+
+            var items = g.querySelectorAll('.agent-popup-item');
+            items.forEach(function(item) {
+              var nameEl = item.querySelector('.agent-autocomplete-popup-item-name, [class*="item-name"]');
+              var badgeEl = item.querySelector('[class*="badge-text"]');
+              var name = nameEl ? nameEl.textContent.trim() : '';
+              var badge = badgeEl ? badgeEl.textContent.trim() : '-';
+              var id = (item.id || '').replace('agent-popup-item_', '');
+
+              if (!name) {
+                name = item.textContent.trim().split('\n')[0].trim();
+              }
+              if (name.length > 60) name = name.substring(0, 60) + '...';
+
+              results.push({
+                Group: groupName,
+                Command: name,
+                Badge: badge,
+                Id: id
+              });
+            });
+          });
+        }
+
+        if (results.length === 0) {
+          var allItems = activeLocator.querySelectorAll('[class*="item"], [role="option"], li');
+          allItems.forEach(function(item) {
+            var text = item.textContent.trim();
+            if (!text || text.length > 200) return;
+            var lines = text.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l; });
+            results.push({
+              Group: '-',
+              Command: lines[0] || text.substring(0, 60),
+              Badge: lines.length > 1 ? lines[1].substring(0, 40) : '-',
+              Id: item.id || item.getAttribute('data-id') || '-'
+            });
+          });
+        }
+
+        if (results.length === 0) {
+          results.push({
+            Group: '-',
+            Command: '-',
+            Badge: activeLocator.innerHTML.substring(0, 100),
+            Id: 'raw-html'
+          });
+        }
+
+        if (editor) {
+          var sel = window.getSelection();
+          sel.selectAllChildren(editor);
+          document.execCommand('delete', false, null);
+          await new Promise(function(r) { setTimeout(r, 100); });
+          if (editor.textContent.trim().length > 0) {
+            editor.innerHTML = '';
+            editor.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          editor.blur();
+        }
+
+        return results;
+      })()

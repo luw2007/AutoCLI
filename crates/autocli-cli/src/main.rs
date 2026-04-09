@@ -75,7 +75,12 @@ fn build_cli(registry: &Registry, external_clis: &[ExternalCli]) -> Command {
                 let mut arg = if arg_def.positional {
                     Arg::new(arg_def.name.clone())
                 } else {
-                    Arg::new(arg_def.name.clone()).long(arg_def.name.clone())
+                    let a = Arg::new(arg_def.name.clone()).long(arg_def.name.clone());
+                    if let Some(c) = arg_def.short {
+                        a.short(c)
+                    } else {
+                        a
+                    }
                 };
                 if is_bool && !arg_def.positional {
                     arg = arg.action(ArgAction::SetTrue);

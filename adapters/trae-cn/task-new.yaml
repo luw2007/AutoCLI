@@ -17,12 +17,48 @@ args:
     required: false
     default: ""
     description: 图片文件路径（本地路径，支持 png/jpg/gif/webp）
+  model:
+    type: string
+    short: m
+    default: ""
+    description: 指定使用的模型名称（如 claude-sonnet-4-20250514），留空则使用当前选中模型
 
 columns: [Status, Message]
 
 pipeline:
   - evaluate: |
       (async () => {
+        var modelArg = ${{ args.model | json }} || "";
+        if (modelArg) {
+          var modelBtn = document.querySelector('button.icd-model-select-trigger');
+          if (modelBtn) {
+            var fiberKey = Object.keys(modelBtn).find(function(k) { return k.startsWith('__reactFiber'); });
+            if (fiberKey) {
+              var cur = modelBtn[fiberKey];
+              for (var mi = 0; mi < 50 && cur; mi++) {
+                var s = cur.memoizedState;
+                var hookIdx = 0;
+                while (s && hookIdx < 30) {
+                  try {
+                    var ms = s.memoizedState;
+                    if (ms && ms._store && typeof ms._store.getState === 'function') {
+                      var mState = ms._store.getState();
+                      if (mState.originModelListMap !== undefined && typeof mState.changeModel === 'function') {
+                        mState.changeModel(modelArg);
+                        await new Promise(function(r) { setTimeout(r, 300); });
+                        break;
+                      }
+                    }
+                  } catch (e) {}
+                  hookIdx++;
+                  s = s.next;
+                }
+                if (s) break;
+                cur = cur.return;
+              }
+            }
+          }
+        }
         var title = ${{ args.title | json }} || "";
         var imageB64 = ${{ args.image | base64_file | json }} || "";
         var imagePath = ${{ args.image | json }} || "";

@@ -33,4 +33,6 @@ pub struct ArgDef {
     pub choices: Option<Vec<String>>,
     #[serde(default)]
     pub default: Option<Value>,
+    #[serde(default)]
+    pub short: Option<char>,
 }

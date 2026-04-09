@@ -125,6 +125,10 @@ fn parse_args(raw: &Value) -> Result<Vec<ArgDef>, CliError> {
                     .collect()
             }),
             default: def.get("default").cloned(),
+            short: def
+                .get("short")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.chars().next()),
         });
     }
 

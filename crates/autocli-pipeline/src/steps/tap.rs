@@ -111,7 +111,6 @@ impl StepHandler for TapStep {
 
         // Extract action args (optional)
         let action_args = obj.get("args").cloned().unwrap_or(Value::Array(vec![]));
-        let action_args_json = serde_json::to_string(&action_args).unwrap_or("[]".to_string());
 
         let store_name_json = serde_json::to_string(&store_name).unwrap_or("\"\"".to_string());
         let action_name_json = serde_json::to_string(&action_name).unwrap_or("\"\"".to_string());
