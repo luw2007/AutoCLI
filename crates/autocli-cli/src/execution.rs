@@ -1,6 +1,6 @@
 use autocli_core::{CliCommand, CliError, IPage};
 use autocli_pipeline::{execute_pipeline, steps::register_all_steps, StepRegistry};
-use autocli_browser::BrowserBridge;
+use autocli_browser::{BrowserBridge, CdpPage};
 use serde_json::Value;
 use std::sync::Arc;
 use std::collections::HashMap;
@@ -55,26 +55,31 @@ async fn execute_command_inner(
     register_all_steps(&mut registry);
 
     if cmd.needs_browser() {
-        // Browser session
-        let mut bridge = BrowserBridge::new(daemon_port());
-        let page = bridge.connect().await?;
+        let is_cdp_direct = std::env::var("AUTOCLI_CDP_ENDPOINT").is_ok();
+        let page: Arc<dyn IPage> = if let Ok(endpoint) = std::env::var("AUTOCLI_CDP_ENDPOINT") {
+            tracing::info!(endpoint = %endpoint, "Using CDP direct connection");
+            let cdp = CdpPage::connect(&endpoint).await?;
+            Arc::new(cdp)
+        } else {
+            let mut bridge = BrowserBridge::new(daemon_port());
+            bridge.connect().await?
+        };
 
-        // Pre-navigate to domain if set, but ONLY if the pipeline doesn't
-        // start with its own navigate step (to avoid double navigation).
-        let pipeline_starts_with_navigate = cmd.pipeline.as_ref()
-            .and_then(|steps| steps.first())
-            .and_then(|step| step.as_object())
-            .map_or(false, |obj| obj.contains_key("navigate"));
+        if !is_cdp_direct {
+            let pipeline_starts_with_navigate = cmd.pipeline.as_ref()
+                .and_then(|steps| steps.first())
+                .and_then(|step| step.as_object())
+                .map_or(false, |obj| obj.contains_key("navigate"));
 
-        if !pipeline_starts_with_navigate {
-            if let Some(domain) = &cmd.domain {
-                let url = format!("https://{}", domain);
-                tracing::debug!(url = %url, "Pre-navigating to domain");
-                page.goto(&url, None).await?;
+            if !pipeline_starts_with_navigate {
+                if let Some(domain) = &cmd.domain {
+                    let url = format!("https://{}", domain);
+                    tracing::debug!(url = %url, "Pre-navigating to domain");
+                    page.goto(&url, None).await?;
+                }
             }
         }
 
-        // Execute
         let result = if let Some(ref steps) = cmd.pipeline {
             execute_pipeline(Some(page.clone()), steps, &kwargs, &registry).await
         } else if cmd.func.is_some() {
@@ -86,8 +91,9 @@ async fn execute_command_inner(
             )))
         };
 
-        // Close the automation tab/window after command completes
-        let _ = page.close().await;
+        if !is_cdp_direct {
+            let _ = page.close().await;
+        }
 
         result
     } else {

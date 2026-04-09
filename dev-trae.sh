@@ -13,7 +13,11 @@ cd "${OPENCLI_PATH}"
 CDP_HOST="${OPENCLI_CDP_HOST:-localhost}"
 CDP_PORT="${OPENCLI_CDP_PORT:-9222}"
 CDP_BASE="http://${CDP_HOST}:${CDP_PORT}"
-BIN="${OPENCLI_PATH}/target/debug/opencli-rs"
+if [ -x "${OPENCLI_PATH}/target/debug/autocli" ]; then
+    BIN="${OPENCLI_PATH}/target/debug/autocli"
+else
+    BIN="${OPENCLI_PATH}/target/debug/opencli-rs"
+fi
 STATE_FILE="${TMPDIR:-/tmp}/opencli-cdp-endpoint"
 
 list_pages() {
@@ -548,6 +552,7 @@ fi'
         ;;
     *)
         auto_detect_endpoint
+        export AUTOCLI_CDP_ENDPOINT="${OPENCLI_CDP_ENDPOINT}"
         shift
         if [ "$OUTPUT_FORMAT" != "table" ]; then
             $BIN trae-cn "$cmd" --format "$OUTPUT_FORMAT" "$@"
