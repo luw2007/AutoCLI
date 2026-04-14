@@ -12,7 +12,7 @@ args:
     default: false
     description: 滚动加载全部任务后输出
 
-columns: [Index, Status, Title, Time, SessionId]
+columns: [Index, Status, Title, Time, Duration, SessionId]
 
 pipeline:
   - evaluate: |
@@ -60,6 +60,35 @@ pipeline:
           return '-';
         }
 
+        function getSessionMeta(el) {
+          var fk = Object.keys(el).find(function(k) { return k.startsWith('__reactFiber$'); });
+          if (!fk) return {};
+          var cur = el[fk];
+          for (var n = 0; n < 8 && cur; n++) {
+            var p = cur.memoizedProps || {};
+            if (p.session) {
+              var s = p.session;
+              return {
+                sessionId: s.sessionId || '-',
+                createdAt: s.createdAt || s.createTime || s.created_at || '',
+                updatedAt: s.updatedAt || s.updateTime || s.updated_at || ''
+              };
+            }
+            cur = cur.return;
+          }
+          return {};
+        }
+
+        function fmtDuration(ms) {
+          if (!ms || ms <= 0) return '-';
+          var s = Math.floor(ms / 1000);
+          if (s < 60) return s + 's';
+          var m = Math.floor(s / 60);
+          if (m < 60) return m + 'm' + (s % 60 ? (s % 60) + 's' : '');
+          var h = Math.floor(m / 60);
+          return h + 'h' + (m % 60 ? (m % 60) + 'm' : '');
+        }
+
         tasks.forEach(function(task, i) {
           var titleEl = task.querySelector('[class*="task-title"]');
           var title = titleEl ? titleEl.innerText.trim() : '';
@@ -103,12 +132,20 @@ pipeline:
             title = title.substring(0, 50) + '...';
           }
 
+          var meta = getSessionMeta(task);
+          var duration = '-';
+          if (meta.createdAt && meta.updatedAt) {
+            var d = new Date(meta.updatedAt).getTime() - new Date(meta.createdAt).getTime();
+            duration = fmtDuration(d);
+          }
+
           results.push({
             Index: i + 1,
             Status: status + (isSelected ? ' ●' : ''),
             Title: title || '(untitled)',
             Time: time,
-            SessionId: getSessionId(task)
+            Duration: duration,
+            SessionId: meta.sessionId || getSessionId(task)
           });
         });
 
