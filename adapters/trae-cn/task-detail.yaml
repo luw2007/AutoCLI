@@ -149,6 +149,38 @@ pipeline:
 
         var timeMatch = fullText.match(/(\d{1,2}:\d{2})/);
         results.push({ Field: 'Time', Value: timeMatch ? timeMatch[1] : '-' });
+
+        var meta = (function(el) {
+          var fk = Object.keys(el).find(function(k) { return k.startsWith('__reactFiber$'); });
+          if (!fk) return {};
+          var cur = el[fk];
+          for (var n = 0; n < 8 && cur; n++) {
+            var p = cur.memoizedProps || {};
+            if (p.session) return p.session;
+            cur = cur.return;
+          }
+          return {};
+        })(task);
+
+        if (meta.createdAt || meta.createTime) {
+          var ct = meta.createdAt || meta.createTime;
+          results.push({ Field: 'CreatedAt', Value: typeof ct === 'number' ? new Date(ct).toLocaleString() : String(ct) });
+        }
+        if (meta.updatedAt || meta.updateTime) {
+          var ut = meta.updatedAt || meta.updateTime;
+          results.push({ Field: 'UpdatedAt', Value: typeof ut === 'number' ? new Date(ut).toLocaleString() : String(ut) });
+        }
+        if ((meta.createdAt || meta.createTime) && (meta.updatedAt || meta.updateTime)) {
+          var start = new Date(meta.createdAt || meta.createTime).getTime();
+          var end = new Date(meta.updatedAt || meta.updateTime).getTime();
+          var diff = end - start;
+          if (diff > 0) {
+            var sec = Math.floor(diff / 1000);
+            var dur = sec < 60 ? sec + 's' : sec < 3600 ? Math.floor(sec/60) + 'm' + (sec%60 ? (sec%60)+'s' : '') : Math.floor(sec/3600) + 'h' + (Math.floor((sec%3600)/60) ? Math.floor((sec%3600)/60)+'m' : '');
+            results.push({ Field: 'Duration', Value: dur });
+          }
+        }
+
         results.push({ Field: 'Full Text', Value: fullText.substring(0, 300) });
 
         return results;
