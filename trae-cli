@@ -7,6 +7,7 @@ autocli 透传、冒烟测试、task-resolve 等全部功能。
 
 import json
 import os
+import re
 import subprocess
 import sys
 import textwrap
@@ -278,7 +279,7 @@ def cmd_smoke(args):
         output = (r.stdout or "")[:5000]
         first_line = output.split("\n", 1)[0] if output else ""
         ok_exit = r.returncode in (0, 101)
-        has_error = any(kw in first_line.lower() for kw in ("error", "status.*error", "role.*error", "field.*error"))
+        has_error = bool(re.search(r'^(error|.*status.*error|.*role.*error|.*field.*error)', first_line, re.IGNORECASE))
         ok = ok_exit and bool(output) and not has_error
 
         if args.json_mode:
@@ -1097,6 +1098,24 @@ def main():
 
     if args.command == "help":
         print(HELP_TEXT)
+        # 动态追加 autocli trae-cn 子命令列表
+        if BIN.exists():
+            r = subprocess.run([str(BIN), "trae-cn", "--help"], capture_output=True, text=True)
+            if r.returncode == 0:
+                in_cmds = False
+                lines = []
+                for line in r.stdout.splitlines():
+                    if line.startswith("Commands:"):
+                        in_cmds = True
+                        continue
+                    if in_cmds:
+                        if not line.strip():
+                            break
+                        lines.append(f"  {line}")
+                if lines:
+                    print("AUTOCLI TRAE-CN SUBCOMMANDS (动态获取):")
+                    print("\n".join(lines))
+                    print()
         return
 
     cmd = args.command
