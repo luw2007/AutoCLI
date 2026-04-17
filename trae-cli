@@ -1,0 +1,1134 @@
+#!/usr/bin/env python3
+"""trae-cli — Trae CN 开发调试 CLI（替代 dev-trae.sh）
+
+单文件、零依赖（仅 Python 3.8+ 标准库），支持交互式 CDP page 选择、
+autocli 透传、冒烟测试、task-resolve 等全部功能。
+"""
+
+import json
+import os
+import subprocess
+import sys
+import textwrap
+import urllib.request
+import urllib.error
+from pathlib import Path
+from typing import List, Dict, Optional
+
+# ─── 常量 ──────────────────────────────────────────────────
+SCRIPT_DIR = Path(__file__).resolve().parent
+BIN = SCRIPT_DIR / "target" / "debug" / "autocli"
+STATE_FILE = Path(os.environ.get("TMPDIR", "/tmp")) / "autocli-cdp-endpoint"
+TRAE_APP = Path("/Applications/Trae CN.app")
+
+# ─── 颜色 ──────────────────────────────────────────────────
+_NO_COLOR = bool(os.environ.get("NO_COLOR")) or not sys.stderr.isatty()
+
+def _set_no_color():
+    """--json 模式下动态禁用颜色"""
+    global _NO_COLOR
+    _NO_COLOR = True
+
+def _c(code: str, text: str) -> str:
+    return text if _NO_COLOR else f"\033[{code}m{text}\033[0m"
+
+def _bold(t: str) -> str: return _c("1", t)
+def _dim(t: str) -> str: return _c("2", t)
+def _yellow(t: str) -> str: return _c("1;33", t)
+def _cyan(t: str) -> str: return _c("1;36", t)
+def _red(t: str) -> str: return _c("1;31", t)
+def _green(t: str) -> str: return _c("1;32", t)
+
+# 全局 json_mode 标志，由 main() 设置
+_JSON_MODE = False
+
+def _err(msg: str, code: str = ""):
+    if _JSON_MODE:
+        d = {"error": msg}
+        if code:
+            d["code"] = code
+        print(json.dumps(d, ensure_ascii=False), file=sys.stderr)
+    else:
+        print(f"{_red('❌')} {msg}", file=sys.stderr)
+
+def _ok(msg: str):
+    if _JSON_MODE:
+        print(json.dumps({"ok": True, "message": msg}, ensure_ascii=False))
+    else:
+        print(f"{_green('✅')} {msg}")
+
+# ─── CDP 连接 ──────────────────────────────────────────────
+def cdp_host() -> str:
+    return os.environ.get("AUTOCLI_CDP_HOST", "localhost")
+
+def cdp_port() -> str:
+    return os.environ.get("AUTOCLI_CDP_PORT", "9222")
+
+def cdp_base() -> str:
+    return f"http://{cdp_host()}:{cdp_port()}"
+
+def list_pages() -> List[Dict]:
+    """获取所有 CDP page，返回 [{index, id, title, url, type}]"""
+    url = f"{cdp_base()}/json/list"
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = json.loads(resp.read())
+    except (urllib.error.URLError, OSError):
+        _err(f"无法连接 CDP ({cdp_base()})", "E1001")
+        sys.exit(1)
+    pages = []
+    for i, item in enumerate(data):
+        if item.get("type") == "page":
+            pages.append({
+                "index": len(pages),
+                "id": item["id"],
+                "title": item.get("title", ""),
+                "url": item.get("url", ""),
+                "type": item.get("type", ""),
+            })
+    return pages
+
+def resolve_page_id(val: str, pages: Optional[List[Dict]] = None) -> str:
+    """编号 → page id；若已是 UUID 则直接返回"""
+    if not val.isdigit():
+        return val
+    if pages is None:
+        pages = list_pages()
+    idx = int(val) - 1  # 用户视角从 1 开始
+    if idx < 0 or idx >= len(pages):
+        _err(f"无效 page 编号: {val}", "E1003")
+        sys.exit(1)
+    return pages[idx]["id"]
+
+def auto_detect_endpoint(page_idx: Optional[str] = None) -> str:
+    """自动检测 CDP endpoint，优先级：环境变量 > --page > 持久化 > 默认第一个"""
+    env = os.environ.get("AUTOCLI_CDP_ENDPOINT")
+    if env:
+        return env
+
+    if page_idx:
+        pid = resolve_page_id(page_idx)
+        ep = f"ws://{cdp_host()}:{cdp_port()}/devtools/page/{pid}"
+        os.environ["AUTOCLI_CDP_ENDPOINT"] = ep
+        return ep
+
+    if STATE_FILE.exists():
+        saved = STATE_FILE.read_text().strip()
+        if saved:
+            os.environ["AUTOCLI_CDP_ENDPOINT"] = saved
+            return saved
+
+    pages = list_pages()
+    if not pages:
+        _err("未发现任何 Trae page", "E1002")
+        sys.exit(1)
+
+    if len(pages) == 1:
+        pid = pages[0]["id"]
+    else:
+        print(f"{_cyan('🔍')} 发现 {len(pages)} 个 Trae 窗口:", file=sys.stderr)
+        for p in pages:
+            print(f"  [{p['index']+1}] {p['title']}  ({p['id'][:8]}...)", file=sys.stderr)
+        pid = pages[0]["id"]
+        print(f"  → 自动选择 [1] {pages[0]['title']}", file=sys.stderr)
+        print(f"  💡 用 'trae-cli pages' 查看全部，'trae-cli use <编号>' 切换", file=sys.stderr)
+
+    ep = f"ws://{cdp_host()}:{cdp_port()}/devtools/page/{pid}"
+    STATE_FILE.write_text(ep)
+    os.environ["AUTOCLI_CDP_ENDPOINT"] = ep
+    return ep
+
+# ─── autocli 执行器 ────────────────────────────────────────
+def run_autocli(*args: str, capture: bool = False) -> subprocess.CompletedProcess:
+    cmd = [str(BIN), "trae-cn", *args]
+    if capture:
+        return subprocess.run(cmd, capture_output=True, text=True)
+    return subprocess.run(cmd)
+
+# ─── 输出格式化 ────────────────────────────────────────────
+def format_pages(pages: List[Dict], fmt: str, active_id: str):
+    if fmt == "json":
+        out = []
+        for p in pages:
+            out.append({**p, "index": p["index"] + 1, "active": p["id"] == active_id})
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif fmt == "csv":
+        print("Index,Id,Title,Url,Type,Active")
+        for p in pages:
+            a = "true" if p["id"] == active_id else "false"
+            t = p["title"].replace('"', '""')
+            u = p["url"].replace('"', '""')
+            print(f'{p["index"]+1},"{p["id"]}","{t}","{u}","{p["type"]}",{a}')
+    elif fmt in ("yaml", "yml"):
+        for p in pages:
+            a = "true" if p["id"] == active_id else "false"
+            print(f'- index: {p["index"]+1}')
+            print(f'  id: "{p["id"]}"')
+            print(f'  title: "{p["title"]}"')
+            print(f'  url: "{p["url"]}"')
+            print(f'  type: "{p["type"]}"')
+            print(f'  active: {a}')
+    elif fmt in ("md", "markdown"):
+        print("| Index | Title | Id | Url | Type | Active |")
+        print("|-------|-------|----|-----|------|--------|")
+        for p in pages:
+            mark = "✦" if p["id"] == active_id else ""
+            print(f'| {p["index"]+1} | {p["title"]} | {p["id"]} | {p["url"]} | {p["type"]} | {mark} |')
+    else:  # table
+        print(f"Trae CDP Pages ({cdp_base()}):")
+        print()
+        for p in pages:
+            mark = " ✦" if p["id"] == active_id else "  "
+            print(f'{mark}[{p["index"]+1}] {p["title"]:<40s} {p["id"]}')
+
+# ─── 子命令实现 ────────────────────────────────────────────
+def cmd_pages(args):
+    pages = list_pages()
+    active_id = ""
+    if STATE_FILE.exists():
+        saved = STATE_FILE.read_text().strip()
+        active_id = saved.rsplit("/", 1)[-1] if saved else ""
+    format_pages(pages, args.format, active_id)
+
+def cmd_use(args):
+    idx = args.index
+    pages = list_pages()
+    pid = resolve_page_id(idx, pages)
+    title = next((p["title"] for p in pages if p["id"] == pid), pid[:8])
+    ep = f"ws://{cdp_host()}:{cdp_port()}/devtools/page/{pid}"
+    STATE_FILE.write_text(ep)
+    os.environ["AUTOCLI_CDP_ENDPOINT"] = ep
+    if args.json_mode:
+        print(json.dumps({"ok": True, "index": idx, "title": title, "endpoint": ep}, ensure_ascii=False))
+    else:
+        _ok(f"已切换到 [{idx}] {title}")
+        print(f"   {ep}")
+        print()
+        run_autocli("status")
+
+def cmd_reset(args):
+    STATE_FILE.unlink(missing_ok=True)
+    _ok("已清除 page 选择")
+
+def cmd_build(args):
+    r = subprocess.run(["cargo", "build"], cwd=SCRIPT_DIR, capture_output=args.json_mode)
+    if args.json_mode:
+        print(json.dumps({"ok": r.returncode == 0, "exit_code": r.returncode}, ensure_ascii=False))
+
+def cmd_test(args):
+    auto_detect_endpoint(args.page)
+    if args.json_mode:
+        r_status = run_autocli("status", "--format", "json", capture=True)
+        r_read = run_autocli("read", "--format", "json", capture=True)
+        result = {
+            "status": {"exit_code": r_status.returncode},
+            "read": {"exit_code": r_read.returncode},
+        }
+        try:
+            result["status"]["data"] = json.loads(r_status.stdout)
+        except (json.JSONDecodeError, TypeError):
+            result["status"]["raw"] = (r_status.stdout or "")[:2000]
+        try:
+            result["read"]["data"] = json.loads(r_read.stdout)
+        except (json.JSONDecodeError, TypeError):
+            result["read"]["raw"] = (r_read.stdout or "")[:2000]
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print("=== status ===")
+        run_autocli("status")
+        print()
+        print("=== read (前 20 行) ===")
+        r = run_autocli("read", capture=True)
+        lines = (r.stdout or "").splitlines()[:20]
+        print("\n".join(lines))
+
+def cmd_smoke(args):
+    auto_detect_endpoint(args.page)
+    ep = os.environ.get("AUTOCLI_CDP_ENDPOINT", "?")
+
+    cases = [
+        ("status",       ["status"]),
+        ("read",         ["read"]),
+        ("tasks",        ["tasks"]),
+        ("context",      ["context"]),
+        ("config",       ["config"]),
+        ("history",      ["history"]),
+        ("models",       ["models"]),
+        ("rules-skills", ["rules-skills"]),
+        ("projects",     ["projects"]),
+        ("commands",     ["commands"]),
+        ("task-detail",  ["task-detail", "1"]),
+        ("export",       ["export"]),
+        ("dump",         ["dump"]),
+    ]
+
+    passed = failed = 0
+    json_results = [] if args.json_mode else None
+
+    if not args.json_mode:
+        print(f"🧪 Trae CN 冒烟测试")
+        print(f"   endpoint: {ep}")
+        print()
+
+    for i, (name, cmd_args) in enumerate(cases, 1):
+        if not args.json_mode:
+            sys.stdout.write(f"  [{i}] {name} ... ")
+            sys.stdout.flush()
+        r = run_autocli(*cmd_args, capture=True)
+        output = (r.stdout or "")[:5000]
+        first_line = output.split("\n", 1)[0] if output else ""
+        ok_exit = r.returncode in (0, 101)
+        has_error = any(kw in first_line.lower() for kw in ("error", "status.*error", "role.*error", "field.*error"))
+        ok = ok_exit and bool(output) and not has_error
+
+        if args.json_mode:
+            entry = {"name": name, "ok": ok, "exit_code": r.returncode}
+            if not ok:
+                entry["output_head"] = output[:500]
+            json_results.append(entry)
+        elif ok:
+            print(_green("✅"))
+        else:
+            code_info = f"exit {r.returncode}" if not ok_exit else "输出含错误"
+            print(_red(f"❌ ({code_info})"))
+            for line in output.splitlines()[:3]:
+                print(f"      {line}")
+
+        if ok:
+            passed += 1
+        else:
+            failed += 1
+
+    if args.json_mode:
+        print(json.dumps({
+            "endpoint": ep,
+            "total": len(cases), "passed": passed, "failed": failed,
+            "results": json_results,
+        }, ensure_ascii=False, indent=2))
+    else:
+        print()
+        print("━" * 25)
+        print(f"  结果: {passed}/{len(cases)} 通过, {failed} 失败")
+        if failed:
+            print(f"  ⚠️  有失败项，请检查")
+        else:
+            _ok("全部通过")
+
+    if failed:
+        sys.exit(1)
+
+def cmd_task_resolve(args):
+    auto_detect_endpoint(args.page)
+    session_arg = args.session
+
+    if session_arg:
+        blocked = [(session_arg, "(指定任务)")]
+    else:
+        r = run_autocli("tasks", "--format", "json", capture=True)
+        if r.returncode != 0:
+            _err("无法获取任务列表", "E2002")
+            if r.stderr:
+                print(r.stderr, file=sys.stderr)
+            ep = os.environ.get("AUTOCLI_CDP_ENDPOINT", "未设置")
+            print(f"   💡 请检查 --page 参数是否有效，当前 endpoint: {ep}", file=sys.stderr)
+            sys.exit(1)
+
+        try:
+            tasks_data = json.loads(r.stdout)
+        except json.JSONDecodeError:
+            _err("任务列表 JSON 解析失败", "E3002")
+            sys.exit(1)
+
+        blocked = []
+        for t in tasks_data:
+            status = t.get("Status", "")
+            if any(kw in status.lower() for kw in ("等待", "waiting", "⏳")):
+                blocked.append((t.get("SessionId", ""), t.get("Title", "")))
+
+        if not blocked:
+            _ok("当前没有阻塞的任务")
+            return
+
+    # 选择目标任务
+    if len(blocked) == 1:
+        target_sid, target_title = blocked[0]
+    else:
+        print()
+        print(f"  ╭{'─'*50}╮")
+        print(f"  │  📋 发现 {len(blocked)} 个阻塞任务，请选择要处理的任务{' '*(50-26-len(str(len(blocked))))}│")
+        print(f"  ╰{'─'*50}╯")
+        print()
+        for i, (sid, title) in enumerate(blocked, 1):
+            print(f"  {_yellow(f'[{i}]')} {title}")
+            print(f"      {_dim(sid)}")
+        print()
+        try:
+            choice = int(input(f"  请选择 [1-{len(blocked)}]: "))
+        except (ValueError, EOFError):
+            _err("无效选择")
+            sys.exit(1)
+        if choice < 1 or choice > len(blocked):
+            _err("无效选择")
+            sys.exit(1)
+        target_sid, target_title = blocked[choice - 1]
+
+    # 获取问询信息
+    r = run_autocli("task-ask", "--session", target_sid, "--format", "json", capture=True)
+    if r.returncode != 0:
+        _err(f"无法获取任务问询信息 (session: {target_sid})", "E2002")
+        sys.exit(1)
+
+    try:
+        ask_data = json.loads(r.stdout)
+    except json.JSONDecodeError:
+        _err("问询 JSON 解析失败", "E3002")
+        sys.exit(1)
+
+    # 提取问题
+    question = ""
+    for item in ask_data:
+        if item.get("Type") == "Question":
+            question = item.get("Label", "")
+            break
+
+    if not question:
+        print(f"ℹ️  任务 [{target_title}] 当前没有待回答的问询")
+        return
+
+    # 提取选项
+    options = [item for item in ask_data if item.get("Type") != "Question"]
+
+    # 渲染 UI
+    box_w = 64
+    border = "─" * box_w
+    title_display = target_title[:50] + "..." if len(target_title) > 50 else target_title
+
+    print()
+    print(f"  {_cyan('╭' + border + '╮')}")
+    pad = box_w - 3 - len(title_display)
+    print(f"  {_cyan('│')} {_bold('❓ ' + title_display)}{' '*max(pad,0)} {_cyan('│')}")
+    print(f"  {_cyan('├' + border + '┤')}")
+
+    # 问题文本折行
+    for line in textwrap.wrap(question, width=60):
+        pad = box_w - 2 - len(line)
+        print(f"  {_cyan('│')}  {line}{' '*max(pad,0)} {_cyan('│')}")
+
+    print(f"  {_cyan('├' + border + '┤')}")
+
+    for opt in options:
+        oidx = opt.get("Index", "?")
+        olabel = opt.get("Label", "")
+        odesc = opt.get("Description", "")
+        pad = box_w - 6 - len(str(oidx)) - len(olabel)
+        print(f"  {_cyan('│')}  {_yellow(f'[{oidx}]')} {_bold(olabel)}{' '*max(pad,0)} {_cyan('│')}")
+        if odesc:
+            pad = box_w - 6 - len(odesc)
+            print(f"  {_cyan('│')}      {_dim(odesc)}{' '*max(pad,0)} {_cyan('│')}")
+
+    print(f"  {_cyan('╰' + border + '╯')}")
+    print()
+
+    try:
+        opt_choice = input(f"  请选择选项 [1-{len(options)}] (q 取消): ").strip()
+    except EOFError:
+        print("  已取消")
+        return
+
+    if opt_choice.lower() == "q":
+        print("  已取消")
+        return
+
+    try:
+        opt_idx = int(opt_choice)
+    except ValueError:
+        _err("无效选择")
+        sys.exit(1)
+
+    if opt_idx < 1 or opt_idx > len(options):
+        _err("无效选择")
+        sys.exit(1)
+
+    # 检查是否需要文本输入
+    selected_opt = options[opt_idx - 1]
+    input_text = ""
+    if "input" in selected_opt.get("Type", "").lower():
+        input_text = input("  请输入内容: ")
+
+    print()
+    print("  ⏳ 正在提交选择...")
+
+    submit_args = ["task-ask", "--session", target_sid, "--select", str(opt_idx), "--format", "json"]
+    if input_text:
+        submit_args.extend(["--text", input_text])
+    r = run_autocli(*submit_args, capture=True)
+
+    try:
+        result_data = json.loads(r.stdout or "[]")
+        submitted = ""
+        for item in result_data:
+            if item.get("Type") == "Submitted":
+                submitted = item.get("Label", "")
+                break
+        if submitted:
+            _ok(f"已提交: {submitted}")
+        else:
+            print("  ⚠️  提交结果:")
+            for line in (r.stdout or "").splitlines()[:5]:
+                print(f"      {line}")
+    except json.JSONDecodeError:
+        print("  ⚠️  提交结果:")
+        for line in (r.stdout or "").splitlines()[:5]:
+            print(f"      {line}")
+    print()
+
+def cmd_init_env(args):
+    port = cdp_port()
+    env_key = "ELECTRON_EXTRA_LAUNCH_ARGS"
+    env_val = f"--remote-debugging-port={port}"
+    plist_label = "com.user.electron-cdp-env"
+    plist_path = Path.home() / "Library" / "LaunchAgents" / f"{plist_label}.plist"
+
+    # 检查当前状态
+    r = subprocess.run(["launchctl", "getenv", env_key], capture_output=True, text=True)
+    current = r.stdout.strip()
+    if current == env_val:
+        if args.json_mode:
+            print(json.dumps({"ok": True, "action": "noop", "message": f"{env_key}={env_val} 已设置"}, ensure_ascii=False))
+        else:
+            _ok(f"环境变量已设置: {env_key}={env_val}")
+            print("   无需重复操作")
+        return
+
+    subprocess.run(["launchctl", "setenv", env_key, env_val], check=True)
+
+    plist_content = f"""\
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{plist_label}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/launchctl</string>
+        <string>setenv</string>
+        <string>{env_key}</string>
+        <string>{env_val}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>"""
+    plist_path.write_text(plist_content)
+    subprocess.run(["launchctl", "load", str(plist_path)], stderr=subprocess.DEVNULL)
+
+    if args.json_mode:
+        print(json.dumps({"ok": True, "action": "set", "env_key": env_key, "env_val": env_val,
+                          "plist": str(plist_path)}, ensure_ascii=False))
+    else:
+        _ok(f"已设置当前会话环境变量: {env_key}={env_val}")
+        _ok(f"已写入 LaunchAgent: {plist_path}")
+        print("   重启后自动生效")
+        print()
+        print("⚠️  需要完全退出 Trae CN 后重新打开才能生效")
+        print(f'   退出: osascript -e \'quit app "Trae CN"\'')
+        print(f'   启动: open "{TRAE_APP}"')
+
+def cmd_init_wrapper(args):
+    electron_dir = TRAE_APP / "Contents" / "MacOS"
+    electron_bin = electron_dir / "Electron"
+    electron_orig = electron_dir / "Electron.orig"
+    port = cdp_port()
+    is_json = args.json_mode
+
+    if not TRAE_APP.is_dir():
+        _err(f"未找到 Trae CN: {TRAE_APP}", "E2001")
+        sys.exit(1)
+
+    if electron_orig.exists():
+        r = subprocess.run(["file", "-b", str(electron_orig)], capture_output=True, text=True)
+        if "Mach-O" in r.stdout:
+            if not is_json:
+                print(f"ℹ️  Electron.orig 已存在 (Mach-O binary)")
+        else:
+            _err(f"Electron.orig 存在但不是 Mach-O binary: {r.stdout.strip()}", "E2002")
+            sys.exit(1)
+    else:
+        r = subprocess.run(["file", "-b", str(electron_bin)], capture_output=True, text=True)
+        if "Mach-O" in r.stdout:
+            subprocess.run(["sudo", "cp", str(electron_bin), str(electron_orig)], check=True)
+            if not is_json:
+                _ok("已备份原始二进制: Electron → Electron.orig")
+        else:
+            _err("Electron 已是脚本，但找不到 Electron.orig", "E2002")
+            if not is_json:
+                r2 = subprocess.run(["head", "-3", str(electron_bin)], capture_output=True, text=True)
+                print(f"    当前内容:\n{r2.stdout}", file=sys.stderr)
+            sys.exit(1)
+
+    wrapper = f"""\
+#!/bin/bash
+DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ "$ELECTRON_RUN_AS_NODE" = "1" ]; then
+    exec "$DIR/Electron.orig" "$@"
+else
+    exec "$DIR/Electron.orig" --remote-debugging-port={port} "$@"
+fi"""
+
+    subprocess.run(["sudo", "tee", str(electron_bin)], input=wrapper.encode(), stdout=subprocess.DEVNULL, check=True)
+    subprocess.run(["sudo", "chmod", "+x", str(electron_bin)], check=True)
+
+    if is_json:
+        print(json.dumps({"ok": True, "action": "wrapper_installed",
+                          "electron_bin": str(electron_bin), "port": port}, ensure_ascii=False))
+    else:
+        _ok(f"已写入 wrapper 脚本: {electron_bin}")
+        print()
+        print(wrapper)
+        print()
+        print("⚠️  需要完全退出 Trae CN 后重新打开才能生效")
+        print(f'   退出: osascript -e \'quit app "Trae CN"\'')
+        print(f'   启动: open "{TRAE_APP}"')
+        print()
+        print("💡 注意: Trae CN 更新后可能覆盖此修改，需重新执行 init-wrapper")
+
+def cmd_passthrough(args):
+    """透传 autocli trae-cn 子命令"""
+    auto_detect_endpoint(args.page)
+    os.environ["AUTOCLI_FOCUS_APP"] = "Trae CN"
+    cmd_args = [args.subcmd] + args.extra
+    if args.json_mode:
+        cmd_args.extend(["--format", "json"])
+    elif args.format != "table":
+        cmd_args.extend(["--format", args.format])
+    run_autocli(*cmd_args)
+
+# ─── 三层帮助文本（mirror-cli 风格）─────────────────────────
+# @USAGE — 速查（80% 覆盖），由 --help / -h 触发
+USAGE_TEXT = """\
+@USAGE trae-cli
+
+Trae CN 开发调试 CLI — 管理 CDP 连接、执行 autocli 子命令。
+
+用法: trae-cli [选项] <命令> [参数...]
+
+选项:
+  --page=N|ID   指定 page 编号或 ID
+  --json        JSON 输出（无 ANSI 颜色，供脚本/Agent 消费）
+  -f, --format  输出格式: table|json|yaml|csv|md (默认: table)
+  --schema      输出完整 JSON Schema（供 Agent 零样本解析）
+  --man         输出完整手册
+  -h, --help    显示此速查帮助
+  -V, --version 版本号
+
+命令:
+  pages          列出 CDP page
+  use <N>        切换 page（持久化）
+  reset          清除 page 选择
+  smoke          冒烟测试
+  task-resolve   交互式处理阻塞任务
+  init-env       设置 CDP 环境变量
+  init-wrapper   替换 Electron 为 wrapper 脚本
+  build / test   构建 / 测试连接
+
+  其他命令直接透传给 autocli trae-cn（如 status, tasks, read, send ...）
+
+示例:
+  trae-cli pages              # 查看 page 列表
+  trae-cli use 2              # 切换到第 2 个窗口
+  trae-cli tasks --json       # JSON 输出任务列表
+  trae-cli smoke              # 冒烟测试
+
+详细帮助: trae-cli help | 完整手册: trae-cli --man
+"""
+
+# @HELP — 日常使用（95% 覆盖），由 help 子命令触发
+HELP_TEXT = """\
+@HELP trae-cli
+
+BRIEF: Trae CN 开发调试 CLI — 管理 CDP 连接、执行 autocli 子命令、冒烟测试。
+
+SYNTAX:
+  trae-cli [--page=N|ID] [--format=FMT] [--json] <command> [args...]
+  trae-cli <trae-cn-subcommand> [args...]
+
+DESCRIPTION:
+  替代 dev-trae.sh 的交互式 CLI 工具。自动检测 CDP endpoint，
+  管理多窗口 page 选择（持久化），透传 autocli trae-cn 全部子命令。
+  单文件、零依赖（Python 3.8+）。
+
+  人类友好 + Agent 友好。所有子命令支持 --json 输出纯 JSON，
+  --schema 输出完整 JSON Schema，--man 输出结构化手册。
+
+OPTIONS:
+  名称              类型      必填  默认值    说明
+  ─────────────────────────────────────────────────────────
+  --page=N|ID       string    否    (自动)    指定 page 编号或 page-id
+  -f, --format=FMT  string    否    table     输出格式: table, json, yaml, csv, md
+  --json            flag      否    -         等价 --format=json，纯 JSON 无 ANSI
+  --schema          flag      否    -         输出完整 JSON Schema
+  --man             flag      否    -         输出完整 @MAN 手册
+
+ENVIRONMENT:
+  AUTOCLI_CDP_ENDPOINT  直接指定 CDP WebSocket endpoint (跳过自动检测)
+  AUTOCLI_CDP_HOST      CDP 主机地址 (默认: localhost)
+  AUTOCLI_CDP_PORT      CDP 端口号 (默认: 9222)
+
+COMMANDS (脚本命令):
+  名称              别名      说明
+  ─────────────────────────────────────────────────────────
+  pages             -         列出所有 CDP page
+  use               -         切换到指定 page (持久化)
+  reset             -         清除 page 选择
+  build             -         cargo build
+  test              -         测试连接 + 读取
+  smoke             -         冒烟测试核心命令
+  task-resolve      resolve   交互式处理阻塞任务的问询
+  init-env          -         通过 launchd 设置环境变量启用 CDP
+  init-wrapper      -         替换 Electron 二进制为 wrapper 脚本
+
+COMMANDS (trae-cn 透传，自动检测 CDP endpoint):
+  直接使用 autocli trae-cn 的任何子命令，如:
+  trae-cli status / read / tasks / send / export / dump ...
+
+COMMON EXAMPLES:
+  # 查看 page 列表
+  trae-cli pages
+
+  # 切换到第 2 个窗口
+  trae-cli use 2
+
+  # 查看任务列表（JSON 格式）
+  trae-cli tasks --json
+
+  # 冒烟测试
+  trae-cli smoke
+
+  # 交互式处理阻塞任务
+  trae-cli task-resolve
+
+  # Agent 集成：获取 JSON Schema
+  trae-cli --schema | jq '.commands[].name'
+
+  # [RECOMMENDED] 初始化 CDP 环境后使用
+  trae-cli init-env && trae-cli pages
+
+COMMON ERRORS:
+  CODE   NAME              DESCRIPTION                    FIX
+  E1001  CDP_UNREACHABLE   无法连接 CDP 端口               确认 Trae CN 已启用 CDP
+  E1002  NO_PAGES          CDP 无可用 page                检查 Trae CN 是否已打开
+  E1003  INVALID_INDEX     page 编号超范围                 执行 trae-cli pages 查看列表
+
+SEE ALSO:
+  trae-cli --help         速查帮助 (@USAGE)
+  trae-cli help           日常帮助 (@HELP, 本文)
+  trae-cli --man          完整手册 (@MAN)
+  trae-cli --schema       JSON Schema
+"""
+
+# @MAN — 完整手册（100% 覆盖），由 --man 触发
+MAN_TEXT = """\
+@MAN trae-cli
+
+NAME:
+  trae-cli — Trae CN 开发调试 CLI
+
+VERSION:
+  1.0.0
+
+SYNOPSIS:
+  trae-cli [全局选项] <命令> [命令参数...]
+  trae-cli <trae-cn-子命令> [参数...]
+
+DESCRIPTION:
+  trae-cli 是 Trae CN (Electron) 桌面应用的终端伴侣工具，替代 dev-trae.sh。
+  通过 CDP (Chrome DevTools Protocol) 连接 Trae CN，提供：
+
+  - CDP page 管理：列出、切换、持久化选择
+  - autocli trae-cn 子命令透传：status, tasks, read, send, export, dump 等
+  - 冒烟测试：自动遍历核心命令验证连通性
+  - 交互式任务处理：解析阻塞任务的问询并提交选择
+  - 环境初始化：设置 CDP 调试端口（launchd / wrapper 两种方式）
+
+  设计目标：人类友好 + Agent 友好。
+  所有子命令支持 --json 输出纯 JSON，--schema 输出完整 JSON Schema，--man 输出结构化手册。
+  单文件、零依赖（Python 3.8+ 标准库）。
+
+GLOBAL OPTIONS:
+  名称              类型      必填  默认值    说明
+  ─────────────────────────────────────────────────────────
+  --page=N|ID       string    否    (自动)    指定 page 编号或 page-id
+  -p N|ID           string    否    (自动)    同 --page
+  -f, --format=FMT  string    否    table     输出格式: table, json, yaml, csv, md
+  --json            flag      否    -         等价 --format=json，纯 JSON 无 ANSI 颜色码
+  --schema          flag      否    -         输出完整 JSON Schema（供 Agent 零样本解析）
+  --man             flag      否    -         输出本完整手册
+  -h, --help        flag      否    -         速查帮助 (@USAGE)
+  -V, --version     flag      否    -         版本号
+
+ENVIRONMENT VARIABLES:
+  变量名                   默认值        说明
+  ─────────────────────────────────────────────────────────
+  AUTOCLI_CDP_ENDPOINT     (无)          直接指定 CDP WebSocket endpoint（跳过自动检测）
+  AUTOCLI_CDP_HOST         localhost     CDP 主机地址
+  AUTOCLI_CDP_PORT         9222          CDP 端口号
+  NO_COLOR                 (无)          非空时禁用 ANSI 颜色输出
+
+CDP ENDPOINT 自动检测优先级:
+  1. AUTOCLI_CDP_ENDPOINT 环境变量
+  2. --page 参数指定
+  3. $TMPDIR/autocli-cdp-endpoint 持久化文件
+  4. 自动选择第一个可用 page
+
+COMMANDS:
+
+  pages
+    列出所有 CDP page。
+    选项: -f/--format/--json 控制输出格式
+    输出字段: index, id, title, url, type, active
+    示例: trae-cli pages --json
+
+  use <编号|ID>
+    切换到指定 page 并持久化。切换后自动执行 status 验证。
+    参数: 编号（从 1 开始）或完整 page UUID
+    示例: trae-cli use 2
+
+  reset
+    清除 page 选择（删除持久化文件）。
+    示例: trae-cli reset
+
+  build
+    执行 cargo build 编译 autocli。
+    示例: trae-cli build
+
+  test
+    测试 CDP 连接：执行 status + read（前 20 行）。
+    选项: --page 指定目标 page
+    示例: trae-cli test --page=2
+
+  smoke
+    冒烟测试：遍历 13 个核心命令验证连通性。
+    测试项: status, read, tasks, context, config, history, models,
+            rules-skills, projects, commands, task-detail, export, dump
+    退出码: 0=全部通过, 1=有失败项
+    选项: --page 指定目标 page
+    示例: trae-cli smoke
+
+  task-resolve [session-id]
+    别名: resolve
+    交互式处理阻塞任务的问询。
+    无参数时自动搜索 "等待/waiting/⏳" 状态的任务。
+    指定 session-id 时直接处理该任务。
+    选项: --page 指定目标 page
+    示例:
+      trae-cli task-resolve
+      trae-cli resolve abc123-session-id
+
+  init-env
+    通过 launchctl 设置 ELECTRON_EXTRA_LAUNCH_ARGS 环境变量。
+    同时写入 ~/Library/LaunchAgents/ plist 确保重启后生效。
+    注意: 需完全退出 Trae CN 后重新打开。
+    示例: trae-cli init-env
+
+  init-wrapper
+    将 Trae CN 的 Electron 二进制替换为 wrapper 脚本。
+    备份原始二进制为 Electron.orig，wrapper 注入 --remote-debugging-port。
+    需要 sudo 权限。Trae CN 更新后可能需重新执行。
+    注意: 需完全退出 Trae CN 后重新打开。
+    示例: trae-cli init-wrapper
+
+  <其他命令>
+    直接透传给 autocli trae-cn。自动检测 CDP endpoint。
+    支持的透传命令（不完全列举）:
+      status, read, tasks, context, config, history, models,
+      rules-skills, projects, commands, task-detail, task-ask,
+      export, dump, send, accept, reject
+    示例:
+      trae-cli status
+      trae-cli tasks --json
+      trae-cli send "你好"
+
+THREE-LAYER HELP SYSTEM:
+  遵循 CLI for Agents 帮助信息分层设计指南:
+
+  层级     触发方式         覆盖率  用途
+  ─────────────────────────────────────────────────
+  @USAGE   trae-cli --help   80%   速查
+  @HELP    trae-cli help     95%   日常使用
+  @MAN     trae-cli --man   100%   完整参考（本文）
+
+  每层使用结构化标记（@USAGE/@HELP/@MAN），方便 LLM 定位解析。
+
+AGENT INTEGRATION:
+  --json 模式:
+    所有子命令在 --json 模式下输出纯 JSON 到 stdout，无 ANSI 颜色码。
+    适合脚本和 Agent 消费。
+    示例:
+      trae-cli pages --json
+      trae-cli tasks --json
+
+  --schema 模式:
+    输出完整 JSON Schema，包含所有命令、参数、选项和枚举定义。
+    适用于 Agent 零样本解析命令结构。
+    示例:
+      trae-cli --schema | jq '.commands[].name'
+
+ERROR CODES:
+  CODE    NAME              TRIGGER                         RECOVERY
+  ─────────────────────────────────────────────────────────────────────
+  E1001   CDP_UNREACHABLE   无法连接 CDP 端口                确认 Trae CN 已启用 CDP
+  E1002   NO_PAGES          CDP 无可用 page                 检查 Trae CN 是否已打开窗口
+  E1003   INVALID_INDEX     page 编号超范围                  执行 trae-cli pages 查看列表
+  E2001   AUTOCLI_MISSING   autocli 二进制不存在             执行 trae-cli build
+  E2002   AUTOCLI_FAILED    autocli 命令执行失败             检查 stderr 错误信息
+  E3001   TASK_NOT_FOUND    指定 session-id 无阻塞任务       执行 trae-cli tasks 查看列表
+  E3002   TASK_PARSE_FAIL   任务 JSON 解析失败               检查 autocli 版本兼容性
+
+FILES:
+  $TMPDIR/autocli-cdp-endpoint    持久化的 CDP endpoint（use 命令写入，reset 清除）
+  ~/Library/LaunchAgents/         init-env 写入的 plist 文件
+
+CAVEATS:
+  - Trae CN 需开启 CDP 调试端口（通过 init-env 或 init-wrapper）
+  - init-wrapper 修改会被 Trae CN 自动更新覆盖
+  - page 选择持久化到 $TMPDIR，系统重启后清除
+  - 透传命令的 --format 仅在 autocli 支持时生效
+
+SEE ALSO:
+  trae-cli --help         速查帮助 (@USAGE)
+  trae-cli help           日常帮助 (@HELP)
+  trae-cli --schema       JSON Schema
+"""
+
+# ─── 参数解析（手动，支持 command 前后的全局选项）────────────
+class Args:
+    def __init__(self):
+        self.page: Optional[str] = None
+        self.format: str = "table"
+        self.help: bool = False
+        self.version: bool = False
+        self.schema: bool = False
+        self.json_mode: bool = False
+        self.man: bool = False
+        self.command: str = "help"
+        self.extra: List[str] = []
+
+def parse_args(argv: List[str]) -> Args:
+    args = Args()
+    rest: List[str] = []
+    it = iter(argv)
+    for tok in it:
+        if tok in ("--help", "-h"):
+            args.help = True
+        elif tok in ("--version", "-V"):
+            args.version = True
+        elif tok == "--schema":
+            args.schema = True
+        elif tok == "--json":
+            args.json_mode = True
+        elif tok == "--man":
+            args.man = True
+        elif tok.startswith("--page="):
+            args.page = tok.split("=", 1)[1]
+        elif tok in ("--page", "-p"):
+            args.page = next(it, None)
+        elif tok.startswith("--format="):
+            args.format = tok.split("=", 1)[1]
+        elif tok == "-f":
+            args.format = next(it, "table")
+        elif tok.startswith("-f"):
+            args.format = tok[2:]  # -fjson
+        else:
+            rest.append(tok)
+    if rest:
+        args.command = rest[0]
+        args.extra = rest[1:]
+    # --json 等价 --format=json
+    if args.json_mode:
+        args.format = "json"
+    return args
+
+# ─── 完整 JSON Schema（供 Agent 零样本解析）─────────────────
+def build_full_schema() -> dict:
+    """构建完整 JSON Schema，包含所有子命令、参数、选项和枚举"""
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "name": "trae-cli",
+        "version": "1.0.0",
+        "description": "Trae CN 开发调试 CLI — 管理 CDP 连接、执行 autocli 子命令",
+        "global_options": [
+            {"name": "--page", "short": "-p", "type": "string", "required": False, "description": "指定 page 编号或 page-id"},
+            {"name": "--format", "short": "-f", "type": "string", "required": False, "default": "table",
+             "enum": ["table", "json", "yaml", "csv", "md"], "description": "输出格式"},
+            {"name": "--json", "type": "boolean", "required": False, "description": "等价 --format=json，纯 JSON 无 ANSI 颜色码"},
+            {"name": "--schema", "type": "boolean", "required": False, "description": "输出完整 JSON Schema"},
+            {"name": "--man", "type": "boolean", "required": False, "description": "输出完整 @MAN 手册"},
+            {"name": "--help", "short": "-h", "type": "boolean", "required": False, "description": "速查帮助 (@USAGE)"},
+            {"name": "--version", "short": "-V", "type": "boolean", "required": False, "description": "版本号"},
+        ],
+        "environment": [
+            {"name": "AUTOCLI_CDP_ENDPOINT", "description": "直接指定 CDP WebSocket endpoint（跳过自动检测）"},
+            {"name": "AUTOCLI_CDP_HOST", "default": "localhost", "description": "CDP 主机地址"},
+            {"name": "AUTOCLI_CDP_PORT", "default": "9222", "description": "CDP 端口号"},
+            {"name": "NO_COLOR", "description": "非空时禁用 ANSI 颜色输出"},
+        ],
+        "commands": [
+            {
+                "name": "pages",
+                "description": "列出所有 CDP page",
+                "args": [],
+                "options": [
+                    {"name": "--format", "short": "-f", "type": "string", "enum": ["table", "json", "yaml", "csv", "md"]},
+                    {"name": "--json", "type": "boolean"},
+                ],
+                "output_fields": ["index", "id", "title", "url", "type", "active"],
+            },
+            {
+                "name": "use",
+                "description": "切换到指定 page（持久化）",
+                "args": [{"name": "index", "type": "string", "required": True, "description": "page 编号（从1开始）或 UUID"}],
+                "options": [],
+            },
+            {
+                "name": "reset",
+                "description": "清除 page 选择",
+                "args": [],
+                "options": [],
+            },
+            {
+                "name": "build",
+                "description": "执行 cargo build 编译 autocli",
+                "args": [],
+                "options": [],
+            },
+            {
+                "name": "test",
+                "description": "测试 CDP 连接（status + read 前20行）",
+                "args": [],
+                "options": [{"name": "--page", "short": "-p", "type": "string"}],
+            },
+            {
+                "name": "smoke",
+                "description": "冒烟测试：遍历核心命令验证连通性",
+                "args": [],
+                "options": [{"name": "--page", "short": "-p", "type": "string"}],
+                "exit_codes": {"0": "全部通过", "1": "有失败项"},
+            },
+            {
+                "name": "task-resolve",
+                "aliases": ["resolve"],
+                "description": "交互式处理阻塞任务的问询",
+                "args": [{"name": "session-id", "type": "string", "required": False, "description": "指定任务 session-id"}],
+                "options": [{"name": "--page", "short": "-p", "type": "string"}],
+            },
+            {
+                "name": "init-env",
+                "description": "通过 launchctl 设置 CDP 环境变量（持久化到 LaunchAgents）",
+                "args": [],
+                "options": [],
+            },
+            {
+                "name": "init-wrapper",
+                "description": "替换 Electron 二进制为 wrapper 脚本（需 sudo）",
+                "args": [],
+                "options": [],
+            },
+        ],
+        "passthrough": {
+            "description": "其他命令直接透传给 autocli trae-cn，自动检测 CDP endpoint",
+            "known_commands": [
+                "status", "read", "tasks", "context", "config", "history", "models",
+                "rules-skills", "projects", "commands", "task-detail", "task-ask",
+                "export", "dump", "send", "accept", "reject",
+            ],
+        },
+        "error_codes": [
+            {"code": "E1001", "name": "CDP_UNREACHABLE", "trigger": "无法连接 CDP 端口", "recovery": "确认 Trae CN 已启用 CDP"},
+            {"code": "E1002", "name": "NO_PAGES", "trigger": "CDP 无可用 page", "recovery": "检查 Trae CN 是否已打开窗口"},
+            {"code": "E1003", "name": "INVALID_INDEX", "trigger": "page 编号超范围", "recovery": "执行 trae-cli pages 查看列表"},
+            {"code": "E2001", "name": "AUTOCLI_MISSING", "trigger": "autocli 二进制不存在", "recovery": "执行 trae-cli build"},
+            {"code": "E2002", "name": "AUTOCLI_FAILED", "trigger": "autocli 命令执行失败", "recovery": "检查 stderr 错误信息"},
+            {"code": "E3001", "name": "TASK_NOT_FOUND", "trigger": "指定 session-id 无阻塞任务", "recovery": "执行 trae-cli tasks 查看列表"},
+            {"code": "E3002", "name": "TASK_PARSE_FAIL", "trigger": "任务 JSON 解析失败", "recovery": "检查 autocli 版本兼容性"},
+        ],
+        "help_layers": {
+            "@USAGE": {"trigger": "--help / -h", "coverage": "80%", "purpose": "速查"},
+            "@HELP": {"trigger": "help 子命令", "coverage": "95%", "purpose": "日常使用"},
+            "@MAN": {"trigger": "--man", "coverage": "100%", "purpose": "完整参考"},
+        },
+    }
+
+# ─── 主入口 ────────────────────────────────────────────────
+def main():
+    script_commands = {
+        "pages", "use", "reset", "build", "test", "smoke",
+        "task-resolve", "resolve", "init-env", "init-wrapper", "help",
+    }
+
+    args = parse_args(sys.argv[1:])
+
+    # --json → 动态抑制颜色 + 设置全局 json 模式
+    global _JSON_MODE
+    if args.json_mode:
+        _JSON_MODE = True
+        _set_no_color()
+
+    # 全局 flag 优先级: version > schema > man > help
+    if args.version:
+        if args.json_mode:
+            print(json.dumps({"version": "1.0.0"}))
+        else:
+            print("trae-cli 1.0.0")
+        return
+
+    if args.schema:
+        print(json.dumps(build_full_schema(), ensure_ascii=False, indent=2))
+        return
+
+    if args.man:
+        print(MAN_TEXT)
+        return
+
+    # --help / -h → @USAGE 速查；help 子命令 → @HELP 日常
+    if args.help:
+        print(USAGE_TEXT)
+        return
+
+    if args.command == "help":
+        print(HELP_TEXT)
+        return
+
+    cmd = args.command
+
+    # 脚本命令分发
+    if cmd == "pages":
+        cmd_pages(args)
+    elif cmd == "use":
+        if not args.extra:
+            _err("用法: trae-cli use <编号>", "E1003")
+            sys.exit(1)
+        args.index = args.extra[0]
+        cmd_use(args)
+    elif cmd == "reset":
+        cmd_reset(args)
+    elif cmd == "build":
+        cmd_build(args)
+    elif cmd == "test":
+        cmd_test(args)
+    elif cmd == "smoke":
+        cmd_smoke(args)
+    elif cmd in ("task-resolve", "resolve"):
+        args.session = args.extra[0] if args.extra else None
+        cmd_task_resolve(args)
+    elif cmd == "init-env":
+        cmd_init_env(args)
+    elif cmd == "init-wrapper":
+        cmd_init_wrapper(args)
+    else:
+        # 透传给 autocli trae-cn
+        args.subcmd = cmd
+        cmd_passthrough(args)
+
+if __name__ == "__main__":
+    main()
