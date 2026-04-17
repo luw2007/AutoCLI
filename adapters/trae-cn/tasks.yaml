@@ -12,11 +12,24 @@ args:
     default: false
     description: 滚动加载全部任务后输出
 
-columns: [Index, Status, Title, Time, Duration, SessionId]
+columns: [Index, Status, Title, Time, Duration, SessionId, Project, ProjectPath]
 
 pipeline:
   - evaluate: |
       (async function() {
+        var projectName = '-';
+        var projectPath = '-';
+        try {
+          var ws = window.icubeWorkspace;
+          if (ws && ws.folders) {
+            var f = ws.folders[0];
+            if (f) {
+              projectName = f.name || '-';
+              projectPath = (f.uri && f.uri.path) ? f.uri.path : '-';
+            }
+          }
+        } catch(e) {}
+
         var taskList = document.querySelector('[class*="task-items-list"]');
         if (!taskList) {
           return [{ Index: '-', Status: '-', Title: '未找到任务列表', Time: '-' }];
@@ -145,7 +158,9 @@ pipeline:
             Title: title || '(untitled)',
             Time: time,
             Duration: duration,
-            SessionId: meta.sessionId || getSessionId(task)
+            SessionId: meta.sessionId || getSessionId(task),
+            Project: projectName,
+            ProjectPath: projectPath
           });
         });
 
