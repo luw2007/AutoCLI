@@ -3,24 +3,51 @@
 
 单文件、零依赖（仅 Python 3.8+ 标准库），支持交互式 CDP page 选择、
 autocli 透传、冒烟测试、task-resolve 等全部功能。
+优先通过 state.vscdb 读取本地数据，支持 CDP 实时读写。
 """
 
+import glob as _glob
 import json
 import os
 import re
+import shutil
+import signal
+import sqlite3
 import subprocess
 import sys
+import tempfile
 import textwrap
+import time
 import urllib.request
 import urllib.error
 from pathlib import Path
 from typing import List, Dict, Optional
 
 # ─── 常量 ──────────────────────────────────────────────────
+# 极简 .env 加载
+def _load_dotenv():
+    for d in [os.path.dirname(os.path.abspath(__file__)), os.path.expanduser("~/ai/trae_space/trae-history")]:
+        p = os.path.join(d, ".env")
+        if os.path.isfile(p):
+            with open(p, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, _, v = line.partition("=")
+                    k, v = k.strip(), v.strip().strip("'\"")
+                    if k and k not in os.environ:
+                        os.environ[k] = v
+            break
+_load_dotenv()
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 BIN = SCRIPT_DIR / "target" / "debug" / "autocli"
 STATE_FILE = Path(os.environ.get("TMPDIR", "/tmp")) / "autocli-cdp-endpoint"
 TRAE_APP = Path("/Applications/Trae CN.app")
+TRAE_DIR_DEFAULT = os.path.expanduser("~/Library/Application Support/Trae CN")
+
+VERSION = "1.1.0"
 
 # ─── 颜色 ──────────────────────────────────────────────────
 _NO_COLOR = bool(os.environ.get("NO_COLOR")) or not sys.stderr.isatty()
@@ -605,6 +632,607 @@ def cmd_passthrough(args):
         cmd_args.extend(["--format", args.format])
     run_autocli(*cmd_args)
 
+# ─── 本地数据源：vscdb 查询 + 日志监听 ─────────────────────
+def _resolve_mode() -> str:
+    """解析运行模式：cdp / local / auto（自动检测）
+    TRAE_MODE 环境变量优先；auto 模式下检测 CDP endpoint 是否可达。
+    """
+    mode = os.environ.get("TRAE_MODE", "auto").lower()
+    if mode in ("cdp", "local"):
+        return mode
+    # auto: 有可用 CDP endpoint → cdp，否则 local
+    if os.environ.get("AUTOCLI_CDP_ENDPOINT"):
+        return "cdp"
+    if STATE_FILE.exists():
+        try:
+            saved = STATE_FILE.read_text().strip()
+            if saved:
+                return "cdp"
+        except Exception:
+            pass
+    # 尝试探测 CDP 端口
+    try:
+        port = cdp_port()
+        url = f"http://{cdp_host()}:{port}/json/list"
+        req = urllib.request.Request(url, method="GET")
+        resp = urllib.request.urlopen(req, timeout=1)
+        if resp.status == 200:
+            return "cdp"
+    except Exception:
+        pass
+    return "local"
+
+
+def _require_cdp_mode(cmd_name: str):
+    """在 local 模式下调用 CDP-only 命令时报错退出"""
+    _err(f"命令 '{cmd_name}' 需要 CDP 模式（设置 TRAE_MODE=cdp 或确保 CDP 端口可达）", "E7001")
+    sys.exit(1)
+
+
+def _resolve_trae_dir(args) -> str:
+    """从 args / 环境变量 / 默认值中解析 Trae 数据目录"""
+    d = getattr(args, "trae_dir", None) or os.environ.get("TRAE_DIR") or TRAE_DIR_DEFAULT
+    if not os.path.isdir(d):
+        _err(f"Trae 数据目录不存在: {d}", "E5001")
+        sys.exit(1)
+    return d
+
+
+def _find_workspace_db(trae_dir: str, project_path: str) -> Optional[str]:
+    """根据项目路径在 workspaceStorage 中查找 state.vscdb"""
+    ws_root = os.path.join(trae_dir, "User", "workspaceStorage")
+    if not os.path.isdir(ws_root):
+        return None
+    target_uri = f"file://{os.path.realpath(project_path)}"
+    for folder in os.listdir(ws_root):
+        ws_json = os.path.join(ws_root, folder, "workspace.json")
+        if os.path.isfile(ws_json):
+            try:
+                with open(ws_json, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if data.get("folder") == target_uri:
+                    db = os.path.join(ws_root, folder, "state.vscdb")
+                    if os.path.isfile(db):
+                        return db
+            except Exception:
+                continue
+    return None
+
+
+def _query_vscdb(db_path: str, key: Optional[str] = None,
+                 like_pattern: Optional[str] = None) -> Optional[str]:
+    """查询 state.vscdb 的 ItemTable（临时拷贝避免锁冲突）"""
+    tmp_db = os.path.join(tempfile.gettempdir(), f"trae_cli_vscdb_{os.getpid()}.db")
+    try:
+        shutil.copy2(db_path, tmp_db)
+        conn = sqlite3.connect(tmp_db)
+        cur = conn.cursor()
+        if key:
+            cur.execute("SELECT value FROM ItemTable WHERE key = ?", (key,))
+        elif like_pattern:
+            cur.execute("SELECT value FROM ItemTable WHERE key LIKE ?", (like_pattern,))
+        else:
+            conn.close()
+            return None
+        row = cur.fetchone()
+        conn.close()
+        return row[0] if row else None
+    except Exception:
+        return None
+    finally:
+        if os.path.exists(tmp_db):
+            os.remove(tmp_db)
+
+
+def _query_vscdb_all(db_path: str, like_pattern: str) -> List[str]:
+    """查询 state.vscdb 的 ItemTable，返回所有匹配行的 value"""
+    tmp_db = os.path.join(tempfile.gettempdir(), f"trae_cli_vscdb_{os.getpid()}.db")
+    try:
+        shutil.copy2(db_path, tmp_db)
+        conn = sqlite3.connect(tmp_db)
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM ItemTable WHERE key LIKE ?", (like_pattern,))
+        rows = cur.fetchall()
+        conn.close()
+        return [row[0] for row in rows]
+    except Exception:
+        return []
+    finally:
+        if os.path.exists(tmp_db):
+            os.remove(tmp_db)
+
+
+def _derive_session_status(messages: List[Dict]) -> str:
+    """从消息列表推导会话状态"""
+    if not messages:
+        return "待处理"
+    last_assistant = None
+    for msg in reversed(messages):
+        if msg.get("role") == "assistant":
+            last_assistant = msg
+            break
+    if not last_assistant:
+        return "待处理"
+    status = (last_assistant.get("status") or "").lower()
+    if status in ("done", "finished", "completed", "success"):
+        return "已完成"
+    if status in ("streaming", "running", "pending", "thinking"):
+        return "进行中"
+    if status in ("waiting", "need_confirm", "need_manual_confirm"):
+        return "等待操作"
+    if status in ("error", "failed", "cancelled", "stopped"):
+        return "已停止"
+    content = last_assistant.get("content", "")
+    if not content:
+        task_content = last_assistant.get("agentTaskContent", {})
+        if isinstance(task_content, dict):
+            content = task_content.get("proposal", "")
+    return "已完成" if content else "进行中"
+
+
+def _extract_session_title(messages: List[Dict], session_id: str) -> str:
+    """提取会话标题：取第一条用户消息首行，截断至 60 字符"""
+    for msg in messages:
+        if msg.get("role") == "user" and msg.get("content"):
+            first_line = msg["content"].strip().split("\n", 1)[0]
+            return first_line[:57] + "..." if len(first_line) > 60 else first_line
+    return f"Session {session_id[:8]}"
+
+
+def _extract_trae_sessions(trae_dir: str, project_path: str) -> List[Dict]:
+    """提取会话列表：从 vscdb 读取"""
+    db_path = _find_workspace_db(trae_dir, project_path)
+    if not db_path:
+        return []
+
+    # 路线 A: ng-chat-storage
+    raw = _query_vscdb(db_path, like_pattern="memento/icube-ai-ng-chat-storage-%")
+    if raw:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            data = {}
+        sessions = []
+        for s in data.get("list", []):
+            sid = s.get("sessionId", "")
+            if not sid:
+                continue
+            messages = s.get("messages", [])
+            sessions.append({
+                "SessionId": sid,
+                "Title": _extract_session_title(messages, sid),
+                "Status": _derive_session_status(messages),
+                "MessageCount": len(messages),
+                "CreatedAt": s.get("createdAt"),
+                "UpdatedAt": s.get("updatedAt"),
+            })
+        if sessions:
+            return sessions
+
+    # 路线 B: icube_session_agent_map + input-history
+    agent_map_raw = _query_vscdb(db_path, key="icube_session_agent_map")
+    if not agent_map_raw:
+        return []
+    try:
+        agent_map = json.loads(agent_map_raw)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(agent_map, dict):
+        return []
+
+    input_raw = _query_vscdb(db_path, key="icube-ai-agent-storage-input-history")
+    inputs: List[str] = []
+    if input_raw:
+        try:
+            input_data = json.loads(input_raw)
+            if isinstance(input_data, list):
+                inputs = [
+                    item.get("inputText", "").strip().split("\n", 1)[0][:60]
+                    for item in input_data
+                    if isinstance(item, dict) and item.get("inputText")
+                ]
+        except json.JSONDecodeError:
+            pass
+
+    sessions = []
+    for idx, (sid, agent_type) in enumerate(agent_map.items()):
+        sessions.append({
+            "SessionId": sid,
+            "Title": inputs[idx] if idx < len(inputs) else f"Session {sid[:8]}",
+            "Status": "已完成",
+            "MessageCount": 0,
+            "CreatedAt": None,
+            "UpdatedAt": None,
+        })
+    return sessions
+
+
+def _search_session_in_db(db_path: str, session_id: str) -> Optional[Dict]:
+    """在单个 vscdb 中搜索指定 session，支持前缀匹配"""
+    values = _query_vscdb_all(db_path, "memento/icube-ai-ng-chat-storage-%")
+    for raw in values:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        for s in data.get("list", []):
+            sid = s.get("sessionId", "")
+            if sid == session_id or sid.startswith(session_id):
+                return {
+                    "sessionId": sid,
+                    "messages": s.get("messages", []),
+                    "createdAt": s.get("createdAt"),
+                    "updatedAt": s.get("updatedAt"),
+                    "db_path": db_path,
+                }
+    return None
+
+
+def _find_session_messages(trae_dir: str, session_id: str,
+                           project_path: Optional[str] = None) -> Optional[Dict]:
+    """查找指定 session 的完整消息：从 vscdb 读取"""
+    if project_path:
+        db_path = _find_workspace_db(trae_dir, project_path)
+        if db_path:
+            result = _search_session_in_db(db_path, session_id)
+            if result:
+                return result
+        return None
+    # 无项目路径时遍历全部 workspace
+    ws_root = os.path.join(trae_dir, "User", "workspaceStorage")
+    if not os.path.isdir(ws_root):
+        return None
+    for folder in os.listdir(ws_root):
+        db_path = os.path.join(ws_root, folder, "state.vscdb")
+        if os.path.isfile(db_path):
+            result = _search_session_in_db(db_path, session_id)
+            if result:
+                return result
+    return None
+
+
+def _format_message_for_output(msg: Dict, index: int) -> Dict:
+    """将 vscdb 消息格式化为与 CDP read 对齐的输出结构"""
+    role = msg.get("role", "unknown")
+    content = msg.get("content", "")
+    status = msg.get("status", "")
+    agent_task = msg.get("agentTaskContent")
+
+    # 角色映射
+    role_map = {"user": "User", "assistant": "Assistant", "system": "System"}
+    display_role = role_map.get(role, role.capitalize())
+
+    # 类型推导
+    if role == "user":
+        msg_type = "message"
+    elif agent_task:
+        msg_type = "agent-task"
+    elif role == "system":
+        msg_type = "system"
+    else:
+        msg_type = "text"
+
+    text = content or ""
+    if agent_task and isinstance(agent_task, dict):
+        # agentTaskContent 可能包含 steps/toolCalls 等结构化数据
+        steps = agent_task.get("steps", [])
+        if steps:
+            parts = []
+            for step in steps:
+                step_content = step.get("content", "")
+                tool_calls = step.get("toolCalls", [])
+                if step_content:
+                    parts.append(step_content)
+                for tc in tool_calls:
+                    tool_name = tc.get("toolName", "unknown")
+                    tool_status = tc.get("status", "")
+                    parts.append(f"[tool:{tool_name} status:{tool_status}]")
+            text = "\n".join(parts) if parts else text
+
+    # 截断超长内容
+    if len(text) > 10000:
+        text = text[:10000] + "... (truncated)"
+
+    return {
+        "Index": index,
+        "Role": display_role,
+        "Type": msg_type,
+        "Status": status,
+        "Text": text or "(empty)",
+    }
+
+
+def _read_local(args):
+    """读取指定 session 的完整消息内容（从 vscdb 读取）"""
+    trae_dir = _resolve_trae_dir(args)
+
+    if not args.extra:
+        _err("用法: trae-cli read <session-id> [project-path]", "E6001")
+        sys.exit(1)
+
+    session_id = args.extra[0]
+    project_path = args.extra[1] if len(args.extra) > 1 else None
+    if project_path:
+        project_path = os.path.realpath(os.path.expanduser(project_path))
+
+    result = _find_session_messages(trae_dir, session_id, project_path)
+    if not result:
+        if args.json_mode:
+            print(json.dumps({"error": f"未找到 session: {session_id}", "code": "E6002"},
+                             ensure_ascii=False))
+        else:
+            _err(f"未找到 session: {session_id}（尝试用 history 命令获取 session 列表）", "E6002")
+        sys.exit(1)
+
+    messages = result["messages"]
+    formatted = [_format_message_for_output(msg, i) for i, msg in enumerate(messages)]
+
+    if args.json_mode:
+        print(json.dumps({
+            "sessionId": result["sessionId"],
+            "messageCount": len(messages),
+            "createdAt": result.get("createdAt"),
+            "updatedAt": result.get("updatedAt"),
+            "db_path": result.get("db_path"),
+            "messages": formatted,
+        }, ensure_ascii=False, indent=2))
+    else:
+        print(f"Session: {result['sessionId']}")
+        print(f"消息数: {len(messages)}")
+        if result.get("createdAt"):
+            print(f"创建: {result['createdAt']}")
+        if result.get("updatedAt"):
+            print(f"更新: {result['updatedAt']}")
+        print()
+        for m in formatted:
+            role_color = {"User": "\033[36m", "Assistant": "\033[32m",
+                          "System": "\033[33m"}.get(m["Role"], "")
+            reset = "\033[0m" if role_color else ""
+            header = f"{role_color}[{m['Index']}] {m['Role']}{reset} ({m['Type']})"
+            if m["Status"]:
+                header += f" [{m['Status']}]"
+            print(header)
+            # 缩进文本，限制预览行数
+            lines = m["Text"].split("\n")
+            preview = lines[:20]
+            for line in preview:
+                print(f"  {line}")
+            if len(lines) > 20:
+                print(f"  ... ({len(lines) - 20} more lines)")
+            print()
+
+
+def _history_local(args):
+    """查询指定项目的 Trae 会话状态（从 vscdb 读取）"""
+    trae_dir = _resolve_trae_dir(args)
+    project_path = args.extra[0] if args.extra else os.getcwd()
+    project_path = os.path.realpath(os.path.expanduser(project_path))
+
+    if not os.path.isdir(project_path):
+        _err(f"项目目录不存在: {project_path}", "E5002")
+        sys.exit(1)
+
+    sessions = _extract_trae_sessions(trae_dir, project_path)
+    if not sessions:
+        if args.json_mode:
+            print(json.dumps({"sessions": [], "project": project_path}, ensure_ascii=False))
+        else:
+            _err(f"未找到匹配的 Trae 会话（项目: {project_path}）")
+        return
+
+    if args.json_mode:
+        print(json.dumps({
+            "project": project_path,
+            "session_count": len(sessions),
+            "sessions": sessions,
+        }, ensure_ascii=False, indent=2))
+    else:
+        print(f"项目: {project_path}")
+        print(f"会话数: {len(sessions)}")
+        print()
+        for s in sessions:
+            status_icon = {"已完成": "✅", "进行中": "🔄", "等待操作": "⏳",
+                           "待处理": "📝", "已停止": "⛔"}.get(s["Status"], "❓")
+            msg_info = f" ({s['MessageCount']} msgs)" if s["MessageCount"] else ""
+            print(f"  {status_icon} [{s['SessionId'][:8]}] {s['Title']}{msg_info}")
+            print(f"     状态: {s['Status']}")
+        print()
+
+
+# ─── 统一双模分发（TRAE_MODE 切换 CDP / local）──────────────
+def cmd_read(args):
+    """读取对话消息。CDP 模式透传 autocli read，local 模式从 vscdb 读取。"""
+    mode = _resolve_mode()
+    if mode == "cdp":
+        args.subcmd = "read"
+        cmd_passthrough(args)
+    else:
+        _read_local(args)
+
+
+def cmd_history(args):
+    """查看会话列表。CDP 模式透传 autocli history，local 模式从 vscdb 读取。"""
+    mode = _resolve_mode()
+    if mode == "cdp":
+        args.subcmd = "history"
+        cmd_passthrough(args)
+    else:
+        _history_local(args)
+
+
+# ─── 日志监听 ──────────────────────────────────────────────
+def _find_latest_stdout_log(trae_dir: str) -> Optional[str]:
+    """找到最新的 ai-agent stdout 日志文件"""
+    logs_root = os.path.join(trae_dir, "logs")
+    pattern = os.path.join(logs_root, "*", "Modular", "ai-agent_*_stdout.log")
+    candidates = _glob.glob(pattern)
+    if not candidates:
+        return None
+    return max(candidates, key=os.path.getmtime)
+
+
+# 日志事件正则
+_RE_CHAT_START = re.compile(
+    r"route:chat:.*?session_id=(?P<session_id>[0-9a-f]{24}).*?"
+    r"task_id=(?P<task_id>[0-9a-f]{24}).*?message_id=(?P<message_id>[0-9a-f]{24})"
+)
+_RE_TOOLCALL = re.compile(
+    r"toolcall_name:\s*\"(?P<name>[^\"]+)\".*?status:\s*(?P<status>\w+).*?"
+    r"user_message_id:\s*(?P<message_id>[0-9a-f]{24})"
+)
+_RE_PLAN_FINAL = re.compile(
+    r"plan final token cost:\s*(?P<cost_ms>\d+)ms.*?"
+    r"session_id=(?P<session_id>[0-9a-f]{24})"
+)
+_RE_SESSION_REG = re.compile(
+    r"register_session_client:\s*session=(?P<session_id>[0-9a-f-]{36})"
+)
+_RE_SNAPSHOT = re.compile(
+    r"\[snapshot_v2\]\[(?P<project_id>[0-9a-f]{24})\].*?"
+    r"workspace_folder:\s*Some\(\"(?P<workspace>[^\"]+)\"\)"
+)
+_RE_TIMESTAMP = re.compile(r"^(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[+-]\d{2}:\d{2})")
+
+
+def _parse_log_event(line: str) -> Optional[Dict]:
+    """从单行日志提取结构化事件，无匹配返回 None"""
+    ts_m = _RE_TIMESTAMP.match(line)
+    ts = ts_m.group("ts") if ts_m else None
+
+    m = _RE_TOOLCALL.search(line)
+    if m:
+        return {"type": "toolcall", "ts": ts, "name": m.group("name"),
+                "status": m.group("status"), "message_id": m.group("message_id")}
+
+    m = _RE_PLAN_FINAL.search(line)
+    if m:
+        return {"type": "plan_done", "ts": ts, "cost_ms": int(m.group("cost_ms")),
+                "session_id": m.group("session_id")}
+
+    m = _RE_CHAT_START.search(line)
+    if m and "route:chat:" in line and "invoke:" not in line:
+        return {"type": "chat_start", "ts": ts, "session_id": m.group("session_id"),
+                "task_id": m.group("task_id"), "message_id": m.group("message_id")}
+
+    m = _RE_SNAPSHOT.search(line)
+    if m:
+        return {"type": "snapshot", "ts": ts, "project_id": m.group("project_id"),
+                "workspace": m.group("workspace")}
+
+    return None
+
+
+def cmd_watch_log(args):
+    """实时监听 ai-agent stdout 日志，输出结构化事件（NDJSON）
+
+    处理日志截断和轮转：
+    - 截断检测：fd offset > 文件大小时 seek(0) 从头读
+    - 轮转检测：定期比较 inode，发现新文件时切换 fd
+    """
+    trae_dir = _resolve_trae_dir(args)
+    log_path = _find_latest_stdout_log(trae_dir)
+
+    if not log_path:
+        _err("未找到 ai-agent stdout 日志", "E5003")
+        sys.exit(1)
+
+    project_filter = None
+    if args.extra:
+        project_filter = os.path.realpath(os.path.expanduser(args.extra[0]))
+
+    if not args.json_mode:
+        print(f"📡 监听日志: {os.path.basename(log_path)}", file=sys.stderr)
+        if project_filter:
+            print(f"   项目过滤: {project_filter}", file=sys.stderr)
+        print(f"   Ctrl+C 停止", file=sys.stderr)
+        print(file=sys.stderr)
+
+    # 优雅退出
+    running = [True]
+    def _stop(sig, frame):
+        running[0] = False
+    signal.signal(signal.SIGINT, _stop)
+    signal.signal(signal.SIGTERM, _stop)
+
+    def _emit(evt):
+        if args.json_mode:
+            print(json.dumps(evt, ensure_ascii=False), flush=True)
+        else:
+            icon = {"toolcall": "🔧", "plan_done": "📋", "chat_start": "💬",
+                    "snapshot": "📸"}.get(evt["type"], "•")
+            ts_short = evt.get("ts", "")[:19] if evt.get("ts") else ""
+            if evt["type"] == "toolcall":
+                print(f"  {icon} {ts_short}  {evt['name']} ({evt['status']})")
+            elif evt["type"] == "plan_done":
+                print(f"  {icon} {ts_short}  plan 完成 ({evt['cost_ms']}ms)")
+            elif evt["type"] == "chat_start":
+                print(f"  {icon} {ts_short}  chat 开始  session={evt['session_id'][:8]}  task={evt['task_id'][:8]}")
+            elif evt["type"] == "snapshot":
+                print(f"  {icon} {ts_short}  snapshot  project={evt['project_id'][:8]}  workspace={evt['workspace']}")
+            else:
+                print(f"  • {ts_short}  {evt}")
+
+    f = open(log_path, "r", encoding="utf-8", errors="replace")
+    f.seek(0, 2)  # 只看新事件
+    current_inode = os.fstat(f.fileno()).st_ino
+    check_counter = 0
+
+    try:
+        while running[0]:
+            line = f.readline()
+            if not line:
+                check_counter += 1
+                # 每 5 次空读（~1s）检查一次截断和轮转
+                if check_counter >= 5:
+                    check_counter = 0
+
+                    # 截断检测：offset 超过文件实际大小
+                    try:
+                        st = os.fstat(f.fileno())
+                        if f.tell() > st.st_size:
+                            if not args.json_mode:
+                                print("  ⚠️  日志被截断，从头读取", file=sys.stderr)
+                            f.seek(0)
+                    except OSError:
+                        pass
+
+                    # 轮转检测：inode 变化或出现更新的日志文件
+                    try:
+                        new_inode = os.stat(log_path).st_ino
+                    except OSError:
+                        new_inode = current_inode
+                    new_latest = _find_latest_stdout_log(trae_dir)
+                    if (new_inode != current_inode) or (new_latest and new_latest != log_path):
+                        target = new_latest or log_path
+                        if not args.json_mode:
+                            print(f"  🔄 日志轮转，切换: {os.path.basename(target)}", file=sys.stderr)
+                        # 先读完旧文件剩余内容
+                        for tail_line in f:
+                            if project_filter and project_filter not in tail_line:
+                                continue
+                            evt = _parse_log_event(tail_line)
+                            if evt:
+                                _emit(evt)
+                        f.close()
+                        log_path = target
+                        f = open(log_path, "r", encoding="utf-8", errors="replace")
+                        current_inode = os.fstat(f.fileno()).st_ino
+
+                time.sleep(0.2)
+                continue
+
+            check_counter = 0
+            if project_filter and project_filter not in line:
+                continue
+            evt = _parse_log_event(line)
+            if evt:
+                _emit(evt)
+    finally:
+        f.close()
+
+    if not args.json_mode:
+        print("\n已停止监听", file=sys.stderr)
+
 # ─── 三层帮助文本（mirror-cli 风格）─────────────────────────
 # @USAGE — 速查（80% 覆盖），由 --help / -h 触发
 USAGE_TEXT = """\
@@ -633,13 +1261,23 @@ Trae CN 开发调试 CLI — 管理 CDP 连接、执行 autocli 子命令。
   init-wrapper   替换 Electron 为 wrapper 脚本
   build / test   构建 / 测试连接
 
-  其他命令直接透传给 autocli trae-cn（如 status, tasks, read, send ...）
+  read [session-id] [path]  读取对话消息（auto: CDP→vscdb 自动切换）
+  history [path]   查看会话列表（auto: CDP→vscdb 自动切换）
+  watch-log [path]  实时监听 ai-agent stdout 日志事件
+
+  其他命令直接透传给 autocli trae-cn（如 status, tasks, send ...）
+
+环境变量:
+  TRAE_MODE=cdp|local|auto  切换运行模式（默认 auto：CDP 可达用 CDP，否则 local）
 
 示例:
   trae-cli pages              # 查看 page 列表
   trae-cli use 2              # 切换到第 2 个窗口
   trae-cli tasks --json       # JSON 输出任务列表
   trae-cli smoke              # 冒烟测试
+  trae-cli read abc123        # 读取 session 消息（auto 模式）
+  trae-cli history .          # 查看项目会话列表
+  trae-cli watch-log --json   # 监听日志事件（NDJSON）
 
 详细帮助: trae-cli help | 完整手册: trae-cli --man
 """
@@ -672,9 +1310,10 @@ OPTIONS:
   --man             flag      否    -         输出完整 @MAN 手册
 
 ENVIRONMENT:
-  AUTOCLI_CDP_ENDPOINT  直接指定 CDP WebSocket endpoint (跳过自动检测)
-  AUTOCLI_CDP_HOST      CDP 主机地址 (默认: localhost)
-  AUTOCLI_CDP_PORT      CDP 端口号 (默认: 9222)
+  TRAE_MODE                 运行模式: cdp / local / auto（默认 auto）
+  AUTOCLI_CDP_ENDPOINT      直接指定 CDP WebSocket endpoint (跳过自动检测)
+  AUTOCLI_CDP_HOST          CDP 主机地址 (默认: localhost)
+  AUTOCLI_CDP_PORT          CDP 端口号 (默认: 9222)
 
 COMMANDS (脚本命令):
   名称              别名      说明
@@ -689,9 +1328,20 @@ COMMANDS (脚本命令):
   init-env          -         通过 launchd 设置环境变量启用 CDP
   init-wrapper      -         替换 Electron 二进制为 wrapper 脚本
 
-COMMANDS (trae-cn 透传，自动检测 CDP endpoint):
-  直接使用 autocli trae-cn 的任何子命令，如:
-  trae-cli status / read / tasks / send / export / dump ...
+COMMANDS (双模命令，TRAE_MODE 自动切换 CDP / local):
+  名称              别名      说明
+  ─────────────────────────────────────────────────────────
+  read              -         读取对话消息（CDP: DOM 实时 / local: vscdb session-id）
+  history           -         查看会话列表（CDP: DOM 实时 / local: vscdb 项目会话）
+
+COMMANDS (本地数据源，无需 CDP):
+  名称              别名      说明
+  ─────────────────────────────────────────────────────────
+  watch-log         watch     实时监听 ai-agent stdout 日志事件（NDJSON）
+
+COMMANDS (trae-cn 透传，仅 CDP 模式):
+  直接使用 autocli trae-cn 的其他子命令，如:
+  trae-cli status / tasks / send / export / dump ...
 
 COMMON EXAMPLES:
   # 查看 page 列表
@@ -708,6 +1358,15 @@ COMMON EXAMPLES:
 
   # 交互式处理阻塞任务
   trae-cli task-resolve
+
+  # 读取指定 session 消息（auto 模式：CDP 不可用时自动走 vscdb）
+  trae-cli read abc123 --json
+
+  # 强制 local 模式读取
+  TRAE_MODE=local trae-cli read abc123
+
+  # 查看项目会话列表
+  trae-cli history .
 
   # Agent 集成：获取 JSON Schema
   trae-cli --schema | jq '.commands[].name'
@@ -744,10 +1403,16 @@ SYNOPSIS:
 
 DESCRIPTION:
   trae-cli 是 Trae CN (Electron) 桌面应用的终端伴侣工具，替代 dev-trae.sh。
-  通过 CDP (Chrome DevTools Protocol) 连接 Trae CN，提供：
+  通过 TRAE_MODE 环境变量切换 CDP / local 双模运行：
 
+  - CDP 模式: 通过 Chrome DevTools Protocol 连接 Trae CN，实时读写 DOM
+  - Local 模式: 直接读取 state.vscdb 和本地日志，无需 CDP 连接
+  - Auto 模式（默认）: 检测 CDP 是否可达，可达走 CDP，否则走 local
+
+  核心功能：
   - CDP page 管理：列出、切换、持久化选择
-  - autocli trae-cn 子命令透传：status, tasks, read, send, export, dump 等
+  - 双模命令：read（消息读取）、history（会话列表）自动切换后端
+  - autocli trae-cn 子命令透传：status, tasks, send, export, dump 等
   - 冒烟测试：自动遍历核心命令验证连通性
   - 交互式任务处理：解析阻塞任务的问询并提交选择
   - 环境初始化：设置 CDP 调试端口（launchd / wrapper 两种方式）
@@ -771,16 +1436,19 @@ GLOBAL OPTIONS:
 ENVIRONMENT VARIABLES:
   变量名                   默认值        说明
   ─────────────────────────────────────────────────────────
+  TRAE_MODE                auto          运行模式: cdp / local / auto
   AUTOCLI_CDP_ENDPOINT     (无)          直接指定 CDP WebSocket endpoint（跳过自动检测）
   AUTOCLI_CDP_HOST         localhost     CDP 主机地址
   AUTOCLI_CDP_PORT         9222          CDP 端口号
+  TRAE_DIR                 (无)          Trae CN 数据目录（覆盖默认路径）
   NO_COLOR                 (无)          非空时禁用 ANSI 颜色输出
 
-CDP ENDPOINT 自动检测优先级:
-  1. AUTOCLI_CDP_ENDPOINT 环境变量
-  2. --page 参数指定
-  3. $TMPDIR/autocli-cdp-endpoint 持久化文件
-  4. 自动选择第一个可用 page
+MODE DETECTION (TRAE_MODE=auto):
+  1. TRAE_MODE=cdp / local → 直接使用
+  2. AUTOCLI_CDP_ENDPOINT 环境变量 → cdp
+  3. $TMPDIR/autocli-cdp-endpoint 持久化文件存在 → cdp
+  4. CDP 端口可达（http://host:port/json/list 200）→ cdp
+  5. 以上均不满足 → local
 
 COMMANDS:
 
@@ -839,10 +1507,48 @@ COMMANDS:
     注意: 需完全退出 Trae CN 后重新打开。
     示例: trae-cli init-wrapper
 
+  read [session-id] [project-path]
+    读取对话消息。双模命令，根据 TRAE_MODE 自动切换后端。
+    CDP 模式: 透传 autocli trae-cn read，从 DOM 实时读取当前对话（无需 session-id）。
+    Local 模式: 从 state.vscdb 读取指定 session 的消息（session-id 必填）。
+    session-id 支持前缀匹配（如前 8 位）。
+    指定 project-path 可缩小搜索范围（仅 local 模式），否则遍历全部 workspace。
+    输出字段: Index, Role, Type, Status, Text
+    选项: --trae-dir 指定 Trae 数据目录（仅 local 模式）
+    示例:
+      trae-cli read                           # CDP 模式: 读取当前对话
+      trae-cli read abc12345 --json           # auto: 优先 CDP，否则 vscdb
+      TRAE_MODE=local trae-cli read abc12345  # 强制 local 模式
+      trae-cli read abc12345 /path/to/project # local: 指定项目范围
+
+  history [project-path]
+    查看会话列表。双模命令，根据 TRAE_MODE 自动切换后端。
+    CDP 模式: 透传 autocli trae-cn history，从 DOM 读取当前对话的 turn 列表。
+    Local 模式: 从 state.vscdb 读取项目的全部会话列表。
+    默认读取当前目录对应的工作区（local 模式）。
+    选项: --trae-dir 指定 Trae 数据目录（仅 local 模式）
+    示例:
+      trae-cli history                           # CDP 模式: 读取当前对话 turns
+      trae-cli history . --json                  # auto: 优先 CDP，否则 vscdb
+      TRAE_MODE=local trae-cli history .         # 强制 local 模式
+      trae-cli history /path/to/project --json   # local: 指定项目
+
+  watch-log [project-path]
+    别名: watch
+    实时监听最新的 ai-agent stdout 日志，输出结构化事件。
+    无需 CDP。事件类型: chat_start, plan_done, toolcall, snapshot。
+    可选指定项目路径做过滤（仅输出包含该路径的事件）。
+    --json 模式输出 NDJSON（每行一个 JSON 对象），适合管道消费。
+    选项: --trae-dir 指定 Trae 数据目录
+    示例:
+      trae-cli watch-log
+      trae-cli watch --json
+      trae-cli watch-log /path/to/project --json
+
   <其他命令>
-    直接透传给 autocli trae-cn。自动检测 CDP endpoint。
+    直接透传给 autocli trae-cn（仅 CDP 模式）。自动检测 CDP endpoint。
     支持的透传命令（不完全列举）:
-      status, read, tasks, context, config, history, models,
+      status, tasks, context, config, models,
       rules-skills, projects, commands, task-detail, task-ask,
       export, dump, send, accept, reject
     示例:
@@ -885,16 +1591,26 @@ ERROR CODES:
   E2002   AUTOCLI_FAILED    autocli 命令执行失败             检查 stderr 错误信息
   E3001   TASK_NOT_FOUND    指定 session-id 无阻塞任务       执行 trae-cli tasks 查看列表
   E3002   TASK_PARSE_FAIL   任务 JSON 解析失败               检查 autocli 版本兼容性
+  E5001   TRAE_DIR_NOT_FOUND  Trae 数据目录不存在           确认已安装或指定 --trae-dir
+  E5002   PROJECT_NOT_FOUND   项目目录不存在                检查路径是否正确
+  E5003   LOG_NOT_FOUND       无 ai-agent stdout 日志       确认 Trae CN 已运行过
+  E6001   SESSION_ID_MISSING  未指定 session-id             用法: read <id>（local 模式）
+  E6002   SESSION_NOT_FOUND   未找到指定 session            先用 history 获取列表
+  E7001   CDP_REQUIRED        命令需要 CDP 模式             设置 TRAE_MODE=cdp 或启用 CDP
 
 FILES:
   $TMPDIR/autocli-cdp-endpoint    持久化的 CDP endpoint（use 命令写入，reset 清除）
   ~/Library/LaunchAgents/         init-env 写入的 plist 文件
 
 CAVEATS:
-  - Trae CN 需开启 CDP 调试端口（通过 init-env 或 init-wrapper）
+  - TRAE_MODE=auto（默认）会自动检测 CDP 可达性，决定 read/history 的后端
+  - CDP 模式需开启 CDP 调试端口（通过 init-env 或 init-wrapper）
   - init-wrapper 修改会被 Trae CN 自动更新覆盖
   - page 选择持久化到 $TMPDIR，系统重启后清除
   - 透传命令的 --format 仅在 autocli 支持时生效
+  - Local 模式的 read/history/watch-log 无需 CDP，直接读取本地文件
+  - state.vscdb 的写入由 Electron StorageService 控制，可能有秒级延迟
+  - stdout 日志格式无官方契约，Trae CN 升级后正则可能需要调整
 
 SEE ALSO:
   trae-cli --help         速查帮助 (@USAGE)
@@ -912,6 +1628,7 @@ class Args:
         self.schema: bool = False
         self.json_mode: bool = False
         self.man: bool = False
+        self.trae_dir: Optional[str] = None
         self.command: str = "help"
         self.extra: List[str] = []
 
@@ -936,6 +1653,10 @@ def parse_args(argv: List[str]) -> Args:
             args.page = next(it, None)
         elif tok.startswith("--format="):
             args.format = tok.split("=", 1)[1]
+        elif tok.startswith("--trae-dir="):
+            args.trae_dir = tok.split("=", 1)[1]
+        elif tok == "--trae-dir":
+            args.trae_dir = next(it, None)
         elif tok == "-f":
             args.format = next(it, "table")
         elif tok.startswith("-f"):
@@ -956,8 +1677,8 @@ def build_full_schema() -> dict:
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "name": "trae-cli",
-        "version": "1.0.0",
-        "description": "Trae CN 开发调试 CLI — 管理 CDP 连接、执行 autocli 子命令",
+        "version": "1.1.0",
+        "description": "Trae CN 开发调试 CLI — CDP 调试 + 本地数据源（vscdb/日志）双模式",
         "global_options": [
             {"name": "--page", "short": "-p", "type": "string", "required": False, "description": "指定 page 编号或 page-id"},
             {"name": "--format", "short": "-f", "type": "string", "required": False, "default": "table",
@@ -972,6 +1693,9 @@ def build_full_schema() -> dict:
             {"name": "AUTOCLI_CDP_ENDPOINT", "description": "直接指定 CDP WebSocket endpoint（跳过自动检测）"},
             {"name": "AUTOCLI_CDP_HOST", "default": "localhost", "description": "CDP 主机地址"},
             {"name": "AUTOCLI_CDP_PORT", "default": "9222", "description": "CDP 端口号"},
+            {"name": "TRAE_MODE", "default": "auto", "enum": ["cdp", "local", "auto"],
+             "description": "运行模式: cdp（强制 CDP）/ local（强制 vscdb）/ auto（自动检测）"},
+            {"name": "TRAE_DIR", "description": "Trae CN 数据目录（覆盖默认路径）"},
             {"name": "NO_COLOR", "description": "非空时禁用 ANSI 颜色输出"},
         ],
         "commands": [
@@ -1035,11 +1759,47 @@ def build_full_schema() -> dict:
                 "args": [],
                 "options": [],
             },
+            {
+                "name": "read",
+                "description": "读取对话消息（双模：CDP 透传 / local vscdb，由 TRAE_MODE 控制）",
+                "args": [
+                    {"name": "session-id", "type": "string", "required": False, "description": "会话 ID（local 模式必填，支持前缀匹配）"},
+                    {"name": "project-path", "type": "string", "required": False, "description": "项目目录路径（仅 local 模式，缩小搜索范围）"},
+                ],
+                "options": [
+                    {"name": "--json", "type": "boolean", "description": "JSON 输出"},
+                    {"name": "--trae-dir", "type": "string", "description": "Trae 数据目录（仅 local 模式）"},
+                ],
+                "output_fields": ["Index", "Role", "Type", "Status", "Text"],
+                "modes": {"cdp": "透传 autocli trae-cn read", "local": "从 state.vscdb 读取指定 session"},
+            },
+            {
+                "name": "history",
+                "description": "查看会话列表（双模：CDP 透传 / local vscdb，由 TRAE_MODE 控制）",
+                "args": [{"name": "project-path", "type": "string", "required": False, "default": ".", "description": "项目目录路径（仅 local 模式）"}],
+                "options": [
+                    {"name": "--json", "type": "boolean", "description": "JSON 输出"},
+                    {"name": "--trae-dir", "type": "string", "description": "Trae 数据目录（仅 local 模式）"},
+                ],
+                "output_fields": {"cdp": ["Index", "Title", "Time"], "local": ["SessionId", "Title", "Status", "MessageCount", "CreatedAt", "UpdatedAt"]},
+                "modes": {"cdp": "透传 autocli trae-cn history", "local": "从 state.vscdb 读取项目会话列表"},
+            },
+            {
+                "name": "watch-log",
+                "aliases": ["watch"],
+                "description": "实时监听 ai-agent stdout 日志事件（无需 CDP）",
+                "args": [{"name": "project-path", "type": "string", "required": False, "description": "按项目路径过滤事件"}],
+                "options": [
+                    {"name": "--json", "type": "boolean", "description": "NDJSON 输出（每行一个事件对象）"},
+                    {"name": "--trae-dir", "type": "string", "description": "Trae 数据目录"},
+                ],
+                "event_types": ["chat_start", "plan_done", "toolcall", "snapshot"],
+            },
         ],
         "passthrough": {
             "description": "其他命令直接透传给 autocli trae-cn，自动检测 CDP endpoint",
             "known_commands": [
-                "status", "read", "tasks", "context", "config", "history", "models",
+                "status", "tasks", "context", "config", "models",
                 "rules-skills", "projects", "commands", "task-detail", "task-ask",
                 "export", "dump", "send", "accept", "reject",
             ],
@@ -1052,6 +1812,12 @@ def build_full_schema() -> dict:
             {"code": "E2002", "name": "AUTOCLI_FAILED", "trigger": "autocli 命令执行失败", "recovery": "检查 stderr 错误信息"},
             {"code": "E3001", "name": "TASK_NOT_FOUND", "trigger": "指定 session-id 无阻塞任务", "recovery": "执行 trae-cli tasks 查看列表"},
             {"code": "E3002", "name": "TASK_PARSE_FAIL", "trigger": "任务 JSON 解析失败", "recovery": "检查 autocli 版本兼容性"},
+            {"code": "E5001", "name": "TRAE_DIR_NOT_FOUND", "trigger": "Trae 数据目录不存在", "recovery": "确认 Trae CN 已安装或指定 --trae-dir"},
+            {"code": "E5002", "name": "PROJECT_NOT_FOUND", "trigger": "项目目录不存在", "recovery": "检查路径是否正确"},
+            {"code": "E5003", "name": "LOG_NOT_FOUND", "trigger": "未找到 ai-agent stdout 日志", "recovery": "确认 Trae CN 已运行过"},
+            {"code": "E6001", "name": "SESSION_ID_MISSING", "trigger": "未指定 session-id（local 模式）", "recovery": "用法: read <id>"},
+            {"code": "E6002", "name": "SESSION_NOT_FOUND", "trigger": "未找到指定 session", "recovery": "先用 history 获取列表"},
+            {"code": "E7001", "name": "CDP_REQUIRED", "trigger": "命令需要 CDP 模式", "recovery": "设置 TRAE_MODE=cdp 或启用 CDP"},
         ],
         "help_layers": {
             "@USAGE": {"trigger": "--help / -h", "coverage": "80%", "purpose": "速查"},
@@ -1065,6 +1831,7 @@ def main():
     script_commands = {
         "pages", "use", "reset", "build", "test", "smoke",
         "task-resolve", "resolve", "init-env", "init-wrapper", "help",
+        "read", "history", "watch-log", "watch",
     }
 
     args = parse_args(sys.argv[1:])
@@ -1078,9 +1845,9 @@ def main():
     # 全局 flag 优先级: version > schema > man > help
     if args.version:
         if args.json_mode:
-            print(json.dumps({"version": "1.0.0"}))
+            print(json.dumps({"version": VERSION}))
         else:
-            print("trae-cli 1.0.0")
+            print(f"trae-cli {VERSION}")
         return
 
     if args.schema:
@@ -1144,6 +1911,12 @@ def main():
         cmd_init_env(args)
     elif cmd == "init-wrapper":
         cmd_init_wrapper(args)
+    elif cmd == "read":
+        cmd_read(args)
+    elif cmd == "history":
+        cmd_history(args)
+    elif cmd in ("watch-log", "watch"):
+        cmd_watch_log(args)
     else:
         # 透传给 autocli trae-cn
         args.subcmd = cmd
