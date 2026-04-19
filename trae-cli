@@ -47,7 +47,7 @@ STATE_FILE = Path(os.environ.get("TMPDIR", "/tmp")) / "autocli-cdp-endpoint"
 TRAE_APP = Path("/Applications/Trae CN.app")
 TRAE_DIR_DEFAULT = os.path.expanduser("~/Library/Application Support/Trae CN")
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 # ─── 颜色 ──────────────────────────────────────────────────
 _NO_COLOR = bool(os.environ.get("NO_COLOR")) or not sys.stderr.isatty()
@@ -1233,6 +1233,307 @@ def cmd_watch_log(args):
     if not args.json_mode:
         print("\n已停止监听", file=sys.stderr)
 
+
+def cmd_watch(args):
+    """实时 tail stdout.log 原始日志行（可按项目路径 / session-id 过滤）"""
+    trae_dir = _resolve_trae_dir(args)
+    log_path = _find_latest_stdout_log(trae_dir)
+
+    if not log_path:
+        _err("未找到 ai-agent stdout 日志", "E5003")
+        sys.exit(1)
+
+    path_filter = None
+    if args.extra:
+        path_filter = os.path.realpath(os.path.expanduser(args.extra[0]))
+
+    if not args.json_mode:
+        print(f"📡 tail: {os.path.basename(log_path)}", file=sys.stderr)
+        if path_filter:
+            print(f"   过滤: {path_filter}", file=sys.stderr)
+        print(f"   Ctrl+C 停止", file=sys.stderr)
+        print(file=sys.stderr)
+
+    running = [True]
+    def _stop(sig, frame):
+        running[0] = False
+    signal.signal(signal.SIGINT, _stop)
+    signal.signal(signal.SIGTERM, _stop)
+
+    f = open(log_path, "r", encoding="utf-8", errors="replace")
+    f.seek(0, 2)
+    current_inode = os.fstat(f.fileno()).st_ino
+    check_counter = 0
+
+    try:
+        while running[0]:
+            line = f.readline()
+            if not line:
+                check_counter += 1
+                if check_counter >= 5:
+                    check_counter = 0
+                    try:
+                        st = os.fstat(f.fileno())
+                        if f.tell() > st.st_size:
+                            f.seek(0)
+                    except OSError:
+                        pass
+                    try:
+                        new_inode = os.stat(log_path).st_ino
+                    except OSError:
+                        new_inode = current_inode
+                    new_latest = _find_latest_stdout_log(trae_dir)
+                    if (new_inode != current_inode) or (new_latest and new_latest != log_path):
+                        target = new_latest or log_path
+                        for tail_line in f:
+                            if path_filter and path_filter not in tail_line:
+                                continue
+                            sys.stdout.write(tail_line)
+                        f.close()
+                        log_path = target
+                        f = open(log_path, "r", encoding="utf-8", errors="replace")
+                        current_inode = os.fstat(f.fileno()).st_ino
+                time.sleep(0.2)
+                continue
+            check_counter = 0
+            if path_filter and path_filter not in line:
+                continue
+            sys.stdout.write(line)
+            sys.stdout.flush()
+    finally:
+        f.close()
+
+    if not args.json_mode:
+        print("\n已停止", file=sys.stderr)
+
+
+# ─── events：session 事件时间线（stdout + snapshot 融合）─────
+_SNAPSHOT_BASE = os.path.join(TRAE_DIR_DEFAULT, "ModularData", "ai-agent", "snapshot")
+
+
+def _find_snapshot_repo(session_id: str) -> Optional[str]:
+    """查找 session 对应的 snapshot v2 git 仓库路径"""
+    base = os.environ.get("TRAE_SNAPSHOT_DIR", _SNAPSHOT_BASE)
+    # 精确匹配
+    v2 = os.path.join(base, session_id, "v2")
+    if os.path.isdir(os.path.join(v2, ".git")):
+        return v2
+    # 前缀匹配
+    if os.path.isdir(base):
+        for d in os.listdir(base):
+            if d.startswith(session_id):
+                v2 = os.path.join(base, d, "v2")
+                if os.path.isdir(os.path.join(v2, ".git")):
+                    return v2
+    return None
+
+
+def _git_log_events(repo_path: str) -> List[Dict]:
+    """从 snapshot git 提取 commit 事件列表（所有分支）"""
+    r = subprocess.run(
+        ["git", "log", "--all", "--format=%H\t%aI\t%s", "--reverse"],
+        cwd=repo_path, capture_output=True, text=True
+    )
+    if r.returncode != 0:
+        return []
+    events = []
+    for line in r.stdout.strip().splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) < 3:
+            continue
+        sha, ts, msg = parts
+        evt = {"source": "snapshot", "ts": ts, "sha": sha[:12], "message": msg}
+        # 解析 commit message 类型
+        if msg.startswith("toolcall-"):
+            # toolcall-<turn_id>-<call_id>
+            segs = msg.split("-", 2)
+            if len(segs) >= 3:
+                evt["type"] = "toolcall"
+                evt["turn_id"] = segs[1]
+                evt["call_id"] = segs[2]
+        elif msg.startswith("user-"):
+            evt["type"] = "user_edit"
+        elif msg.startswith("before-chat-turn-"):
+            evt["type"] = "before_turn"
+            evt["turn_id"] = msg.replace("before-chat-turn-", "").replace("-refresh", "")
+        elif msg.startswith("after-chat-turn-"):
+            evt["type"] = "after_turn"
+            evt["turn_id"] = msg.replace("after-chat-turn-", "")
+        elif msg == "init empty branch":
+            continue
+        else:
+            evt["type"] = "other"
+        events.append(evt)
+    return events
+
+
+def _git_diff_stat(repo_path: str, sha: str) -> str:
+    """获取某个 commit 的 diff stat"""
+    r = subprocess.run(
+        ["git", "diff", "--stat", f"{sha}~1", sha],
+        cwd=repo_path, capture_output=True, text=True
+    )
+    if r.returncode != 0:
+        # 可能是首个 commit
+        r = subprocess.run(
+            ["git", "diff", "--stat", "4b825dc642cb6eb9a060e54bf899d69f82e1fd4b", sha],
+            cwd=repo_path, capture_output=True, text=True
+        )
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def _parse_log_events_from_file(log_path: str, session_id: Optional[str] = None) -> List[Dict]:
+    """从 stdout.log 文件中解析全部事件（可按 session_id 过滤），自动去重"""
+    events = []
+    seen_chat_starts = set()  # (session_id, task_id, message_id) 去重
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                # 粗过滤：行内不含 session_id 则跳过（提速）
+                if session_id and session_id not in line:
+                    continue
+                evt = _parse_log_event(line)
+                if evt:
+                    # 精过滤：事件中的 session_id 必须前缀匹配
+                    if session_id:
+                        evt_sid = evt.get("session_id", "")
+                        if not evt_sid or not evt_sid.startswith(session_id):
+                            continue
+                    # chat_start 去重
+                    if evt["type"] == "chat_start":
+                        key = (evt.get("session_id"), evt.get("task_id"), evt.get("message_id"))
+                        if key in seen_chat_starts:
+                            continue
+                        seen_chat_starts.add(key)
+                    events.append({**evt, "source": "stdout"})
+    except OSError:
+        pass
+    return events
+
+
+def cmd_events(args):
+    """session 事件时间线：融合 stdout.log 事件 + snapshot git 变更"""
+    trae_dir = _resolve_trae_dir(args)
+    session_id = args.extra[0] if args.extra else None
+
+    # 1. 从 stdout.log 提取事件
+    log_path = _find_latest_stdout_log(trae_dir)
+    log_events = []
+    if log_path:
+        log_events = _parse_log_events_from_file(log_path, session_id)
+
+    # 2. 如果指定了 session_id，尝试从 snapshot git 提取事件
+    snap_events = []
+    snap_repo = None
+    if session_id:
+        snap_repo = _find_snapshot_repo(session_id)
+        if snap_repo:
+            snap_events = _git_log_events(snap_repo)
+
+    # 3. 无 session_id 时列出所有可用 session 的摘要
+    if not session_id:
+        # 从 stdout 事件中提取 session 列表
+        session_map: Dict[str, Dict] = {}
+        for evt in log_events:
+            sid = evt.get("session_id", "")
+            if not sid:
+                continue
+            if sid not in session_map:
+                session_map[sid] = {"session_id": sid, "first_ts": evt.get("ts"), "events": 0, "types": set()}
+            session_map[sid]["events"] += 1
+            session_map[sid]["types"].add(evt.get("type", ""))
+            session_map[sid]["last_ts"] = evt.get("ts")
+
+        sessions = sorted(session_map.values(), key=lambda s: s.get("first_ts") or "", reverse=True)
+
+        if args.json_mode:
+            for s in sessions:
+                s["types"] = list(s["types"])
+            print(json.dumps({"sessions": sessions, "total": len(sessions),
+                              "log_file": log_path}, ensure_ascii=False, indent=2))
+        else:
+            if not sessions:
+                _err("stdout.log 中未发现 session 事件（尝试指定 --trae-dir 或检查日志路径）")
+                return
+            print(f"日志: {os.path.basename(log_path or '')}")
+            print(f"发现 {len(sessions)} 个 session:")
+            print()
+            for s in sessions:
+                ts_short = (s.get("first_ts") or "")[:19]
+                types_str = ", ".join(sorted(s["types"] - {""}))
+                print(f"  {_cyan(s['session_id'][:12])}  {ts_short}  {s['events']} events  [{types_str}]")
+            print()
+            print(f"💡 用法: trae-cli events <session-id> 查看详细时间线")
+        return
+
+    # 4. 融合事件并按时间排序
+    all_events = log_events + snap_events
+    def _sort_key(e):
+        ts = e.get("ts") or ""
+        return ts
+    all_events.sort(key=_sort_key)
+
+    if args.json_mode:
+        print(json.dumps({
+            "session_id": session_id,
+            "snapshot_repo": snap_repo,
+            "log_file": log_path,
+            "event_count": len(all_events),
+            "events": all_events,
+        }, ensure_ascii=False, indent=2))
+        return
+
+    # 5. 人类友好渲染
+    if not all_events:
+        _err(f"未找到 session {session_id} 的事件")
+        return
+
+    print(f"Session: {session_id}")
+    print(f"事件数: {len(all_events)}  (stdout: {len(log_events)}, snapshot: {len(snap_events)})")
+    if snap_repo:
+        print(f"Snapshot: {snap_repo}")
+    print()
+
+    source_icon = {"stdout": "📋", "snapshot": "📸"}
+    type_icon = {
+        "chat_start": "💬", "plan_done": "📋", "toolcall": "🔧",
+        "snapshot": "📸", "user_edit": "✏️", "before_turn": "⏮",
+        "after_turn": "⏭", "other": "•",
+    }
+
+    for evt in all_events:
+        src = source_icon.get(evt.get("source", ""), "•")
+        typ = type_icon.get(evt.get("type", ""), "•")
+        ts_short = (evt.get("ts") or "")[:19]
+
+        if evt.get("source") == "snapshot":
+            sha = evt.get("sha", "")
+            msg = evt.get("message", "")
+            detail = f"{sha} {msg}"
+            # 对 toolcall 类型附加 diff stat
+            if evt.get("type") == "toolcall" and snap_repo:
+                stat = _git_diff_stat(snap_repo, evt["sha"])
+                if stat:
+                    stat_lines = stat.splitlines()
+                    # 只取 summary 行
+                    detail += f"  ({stat_lines[-1].strip()})" if stat_lines else ""
+            print(f"  {src}{typ} {_dim(ts_short)}  {detail}")
+        elif evt.get("type") == "toolcall":
+            print(f"  {src}{typ} {_dim(ts_short)}  {_bold(evt.get('name', ''))} ({evt.get('status', '')})")
+        elif evt.get("type") == "chat_start":
+            print(f"  {src}{typ} {_dim(ts_short)}  chat 开始  task={evt.get('task_id', '')[:8]}")
+        elif evt.get("type") == "plan_done":
+            print(f"  {src}{typ} {_dim(ts_short)}  plan 完成 ({evt.get('cost_ms', 0)}ms)")
+        else:
+            etype = evt.get("type", "unknown")
+            extra = ""
+            if evt.get("workspace"):
+                extra = f"  workspace={evt['workspace']}"
+            print(f"  {src}{typ} {_dim(ts_short)}  {etype}{extra}")
+
+    print()
+
+
 # ─── 三层帮助文本（mirror-cli 风格）─────────────────────────
 # @USAGE — 速查（80% 覆盖），由 --help / -h 触发
 USAGE_TEXT = """\
@@ -1263,7 +1564,9 @@ Trae CN 开发调试 CLI — 管理 CDP 连接、执行 autocli 子命令。
 
   read [session-id] [path]  读取对话消息（auto: CDP→vscdb 自动切换）
   history [path]   查看会话列表（auto: CDP→vscdb 自动切换）
-  watch-log [path]  实时监听 ai-agent stdout 日志事件
+  watch [path]      实时 tail stdout.log 原始日志
+  watch-log [path]  实时监听日志事件（结构化 NDJSON）
+  events [session-id]  session 事件时间线（stdout + snapshot 融合）
 
   其他命令直接透传给 autocli trae-cn（如 status, tasks, send ...）
 
@@ -1277,7 +1580,10 @@ Trae CN 开发调试 CLI — 管理 CDP 连接、执行 autocli 子命令。
   trae-cli smoke              # 冒烟测试
   trae-cli read abc123        # 读取 session 消息（auto 模式）
   trae-cli history .          # 查看项目会话列表
-  trae-cli watch-log --json   # 监听日志事件（NDJSON）
+  trae-cli watch               # 实时 tail stdout.log
+  trae-cli watch-log --json    # 监听日志事件（NDJSON）
+  trae-cli events              # 列出所有 session 事件摘要
+  trae-cli events abc123       # session 事件时间线
 
 详细帮助: trae-cli help | 完整手册: trae-cli --man
 """
@@ -1337,7 +1643,9 @@ COMMANDS (双模命令，TRAE_MODE 自动切换 CDP / local):
 COMMANDS (本地数据源，无需 CDP):
   名称              别名      说明
   ─────────────────────────────────────────────────────────
-  watch-log         watch     实时监听 ai-agent stdout 日志事件（NDJSON）
+  watch             -         实时 tail stdout.log 原始日志行
+  watch-log         -         实时监听日志事件（结构化 NDJSON 输出）
+  events            -         session 事件时间线（stdout + snapshot 融合）
 
 COMMANDS (trae-cn 透传，仅 CDP 模式):
   直接使用 autocli trae-cn 的其他子命令，如:
@@ -1370,6 +1678,15 @@ COMMON EXAMPLES:
 
   # Agent 集成：获取 JSON Schema
   trae-cli --schema | jq '.commands[].name'
+
+  # 实时 tail 原始日志
+  trae-cli watch
+  trae-cli watch /path/to/project
+
+  # session 事件时间线
+  trae-cli events              # 列出所有 session
+  trae-cli events abc123       # 指定 session 融合时间线
+  trae-cli events abc123 --json
 
   # [RECOMMENDED] 初始化 CDP 环境后使用
   trae-cli init-env && trae-cli pages
@@ -1534,7 +1851,6 @@ COMMANDS:
       trae-cli history /path/to/project --json   # local: 指定项目
 
   watch-log [project-path]
-    别名: watch
     实时监听最新的 ai-agent stdout 日志，输出结构化事件。
     无需 CDP。事件类型: chat_start, plan_done, toolcall, snapshot。
     可选指定项目路径做过滤（仅输出包含该路径的事件）。
@@ -1542,8 +1858,32 @@ COMMANDS:
     选项: --trae-dir 指定 Trae 数据目录
     示例:
       trae-cli watch-log
-      trae-cli watch --json
+      trae-cli watch-log --json
       trae-cli watch-log /path/to/project --json
+
+  watch [project-path]
+    实时 tail stdout.log 原始日志行。
+    无需 CDP。直接输出原始日志内容，适合快速查看。
+    可选指定项目路径做过滤。
+    选项: --trae-dir 指定 Trae 数据目录
+    示例:
+      trae-cli watch
+      trae-cli watch /path/to/project
+
+  events [session-id]
+    session 事件时间线，融合 stdout.log 事件和 snapshot git 变更。
+    无需 CDP。不传 session-id 时列出所有可用 session 的事件摘要。
+    传入 session-id 时展示该 session 的完整事件时间线，包括：
+    - stdout.log 中的 chat_start / plan_done / toolcall 事件
+    - snapshot git 中的文件变更（toolcall diff stat、user edit、turn 边界）
+    session-id 支持前缀匹配。
+    选项: --trae-dir 指定 Trae 数据目录
+    环境变量: TRAE_SNAPSHOT_DIR 覆盖 snapshot 仓库目录
+    示例:
+      trae-cli events                    # 列出所有 session 摘要
+      trae-cli events abc123             # 指定 session 时间线
+      trae-cli events abc123 --json      # JSON 输出
+      trae-cli events --json             # 所有 session 摘要（JSON）
 
   <其他命令>
     直接透传给 autocli trae-cn（仅 CDP 模式）。自动检测 CDP endpoint。
@@ -1786,14 +2126,32 @@ def build_full_schema() -> dict:
             },
             {
                 "name": "watch-log",
-                "aliases": ["watch"],
-                "description": "实时监听 ai-agent stdout 日志事件（无需 CDP）",
+                "description": "实时监听 ai-agent stdout 日志事件（结构化 NDJSON，无需 CDP）",
                 "args": [{"name": "project-path", "type": "string", "required": False, "description": "按项目路径过滤事件"}],
                 "options": [
                     {"name": "--json", "type": "boolean", "description": "NDJSON 输出（每行一个事件对象）"},
                     {"name": "--trae-dir", "type": "string", "description": "Trae 数据目录"},
                 ],
                 "event_types": ["chat_start", "plan_done", "toolcall", "snapshot"],
+            },
+            {
+                "name": "watch",
+                "description": "实时 tail stdout.log 原始日志行（无需 CDP）",
+                "args": [{"name": "project-path", "type": "string", "required": False, "description": "按项目路径过滤日志行"}],
+                "options": [
+                    {"name": "--trae-dir", "type": "string", "description": "Trae 数据目录"},
+                ],
+            },
+            {
+                "name": "events",
+                "description": "session 事件时间线（stdout + snapshot git 融合，无需 CDP）",
+                "args": [{"name": "session-id", "type": "string", "required": False, "description": "会话 ID（不传则列出所有 session 摘要，支持前缀匹配）"}],
+                "options": [
+                    {"name": "--json", "type": "boolean", "description": "JSON 输出"},
+                    {"name": "--trae-dir", "type": "string", "description": "Trae 数据目录"},
+                ],
+                "event_sources": ["stdout.log", "snapshot git"],
+                "event_types": ["chat_start", "plan_done", "toolcall", "snapshot", "user_edit", "before_turn", "after_turn"],
             },
         ],
         "passthrough": {
@@ -1831,7 +2189,7 @@ def main():
     script_commands = {
         "pages", "use", "reset", "build", "test", "smoke",
         "task-resolve", "resolve", "init-env", "init-wrapper", "help",
-        "read", "history", "watch-log", "watch",
+        "read", "history", "watch-log", "watch", "events",
     }
 
     args = parse_args(sys.argv[1:])
@@ -1915,8 +2273,12 @@ def main():
         cmd_read(args)
     elif cmd == "history":
         cmd_history(args)
-    elif cmd in ("watch-log", "watch"):
+    elif cmd == "watch-log":
         cmd_watch_log(args)
+    elif cmd == "watch":
+        cmd_watch(args)
+    elif cmd == "events":
+        cmd_events(args)
     else:
         # 透传给 autocli trae-cn
         args.subcmd = cmd
